@@ -1,0 +1,114 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libgl1-mesa-dev
+
+      - name: Install Odin
+        uses: laytan/setup-odin@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        run: |
+          odin build . -o:speed -out:whiteout
+
+      - name: Package
+        run: |
+          mkdir -p WHITEOUT-linux-x86_64
+
+          cp whiteout WHITEOUT-linux-x86_64/
+          cp -r sound-effects WHITEOUT-linux-x86_64/
+
+          # Add this only if the music is redistributable:
+          # cp -r music WHITEOUT-linux-x86_64/
+
+          tar -czf WHITEOUT-linux-x86_64.tar.gz \
+            WHITEOUT-linux-x86_64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WHITEOUT-linux-x86_64
+          path: WHITEOUT-linux-x86_64.tar.gz
+
+
+  windows:
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Odin
+        uses: laytan/setup-odin@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        shell: cmd
+        run: |
+          odin build . -o:speed -out:whiteout.exe
+
+      - name: Package
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path WHITEOUT-windows-x86_64
+
+          Copy-Item whiteout.exe WHITEOUT-windows-x86_64/
+          Copy-Item sound-effects WHITEOUT-windows-x86_64/ -Recurse
+
+          # Add music here only if it is redistributable.
+
+          Compress-Archive `
+            -Path WHITEOUT-windows-x86_64 `
+            -DestinationPath WHITEOUT-windows-x86_64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WHITEOUT-windows-x86_64
+          path: WHITEOUT-windows-x86_64.zip
+
+
+  release:
+    needs:
+      - linux
+      - windows
+
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            artifacts/WHITEOUT-linux-x86_64/WHITEOUT-linux-x86_64.tar.gz \
+            artifacts/WHITEOUT-windows-x86_64/WHITEOUT-windows-x86_64.zip \
+            --title "WHITEOUT ${{ github.ref_name }}" \
+            --generate-notes
