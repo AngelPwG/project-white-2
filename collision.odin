@@ -3,7 +3,9 @@ package main
 import rl "vendor:raylib"
 
 handle_collisions :: proc(game: ^Game) {
-	player_rect := centered_rect(game.player_pos, game.player_size)
+	// Keep the visible player readable while giving micrododge encounters a
+	// conservative gameplay hitbox.
+	player_rect := centered_rect(game.player_pos, game.player_hitbox_size)
 
 	for &bullet in game.bullets {
 		if !bullet.active { continue }

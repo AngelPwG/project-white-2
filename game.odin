@@ -7,23 +7,43 @@ SCREEN_H :: 720
 MAX_FRAME_TIME :: 0.033
 
 DEFAULT_PLAYER_SIZE :: 24.0
+DEFAULT_PLAYER_HITBOX :: 12.0
 DEFAULT_PLAYER_SPEED :: 260.0
 DEFAULT_SHOT_SPEED :: 620.0
 ENEMY_SPEED :: 74.0
 
 DEFAULT_FIRE_INTERVAL :: 0.30
+MIN_FIRE_INTERVAL :: 0.12
+RAPID_FIRE_STEP :: 0.045
 DEFAULT_INVULNERABILITY_DURATION :: 1.15
 DEFAULT_DASH_COOLDOWN :: 2.0
 DASH_DURATION :: 0.16
 DASH_SPEED :: 720.0
 BOMBER_BLAST_RADIUS :: 105.0
 BOMBER_GLOBAL_BLAST_RADIUS :: 2000.0
-PARRY_WINDOW_START :: 1.4
-PARRY_WINDOW_STEP :: 0.12
-PARRY_WINDOW_MIN :: 0.25
+PARRY_WARNING_START :: 1.4
+PARRY_WARNING_STEP :: 0.08
+PARRY_WARNING_MIN :: 0.75
+PARRY_SUCCESS_DURATION :: 0.30
+PARRY_SUCCESS_ZONE_START :: 0.50
 PARRY_COOLDOWN :: 2.0
-PARRY_SKILL_ZONE_START :: 0.62
-PARRY_SKILL_ZONE_END :: 0.74
+
+ENEMY_CHASER_BASE_HP :: 8
+ENEMY_SHOOTER_BASE_HP :: 10
+ENEMY_TURRET_BASE_HP :: 14
+ENEMY_DASHER_BASE_HP :: 8
+ENEMY_VOLATILE_BASE_HP :: 6
+ENEMY_BOSS_BASE_HP :: 150
+ENEMY_HP_WAVE_STEP :: 0.5
+BOSS_HP_WAVE_STEP :: 10
+BOSS_HP_DAMAGE_STEP :: 35
+BOSS_HOME_Y :: 290.0
+BOSS_MOVE_RADIUS :: 240.0
+BOSS_FINALE_RADIUS :: 135.0
+BOSS_INTRO_DURATION :: 1.15
+BOSS_ROTATING_RING_DURATION :: 7.0
+BOSS_AIMED_BURST_DURATION :: 7.5
+BOSS_SPIRAL_DURATION :: 8.0
 Parry_Input :: enum { Q, E, R, F, Right_Mouse }
 PARRY_KEYS :: [5]Parry_Input{.Q, .E, .R, .F, .Right_Mouse}
 OPTIONS_COUNT :: 8
@@ -32,11 +52,19 @@ ENEMY_FAN_ANGLES :: [3]f32{-0.18, 0, 0.18}
 SHOTGUN_ANGLES :: [3]f32{-0.14, 0, 0.14}
 BURST_ANGLES :: [3]f32{-0.08, 0, 0.08}
 
+ENCOUNTER_PAUSE :: 0.75
+ENCOUNTER_START_DELAY :: 0.65
+MAX_WAVE_ENCOUNTERS :: 6
+
 Bullet_Kind :: enum { Player, Enemy }
 Enemy_Kind :: enum { Chaser, Shooter, Turret, Dasher, Bomber, Volatile, Boss }
 Weapon_Kind :: enum { Pistol, Shotgun, Burst }
 Run_Phase :: enum { Dialog, Title, Options, Encyclopedia, Playing, Upgrade, GameOver }
 Upgrade_Kind :: enum { Heal, Damage, RapidFire, Shotgun, Burst, MaxHealth, Speed, Invulnerability, Dash }
+Encounter_Kind :: enum { Streaming, Ring_Cage, Spiral, Micrododge, Chaser_Pressure, Crossfire }
+Encounter_State :: enum { Between, Active, Complete }
+Enemy_Mutation_Kind :: enum { None, Rotating_Ring, Alternating_Ring, Spiral_Emitter, Short_Burst, Aimed_Fan }
+Boss_Phase_Kind :: enum { Rotating_Rings, Aimed_Bursts, Spiral, Finale }
 
 Bullet :: struct {
 	active: bool,
@@ -55,6 +83,9 @@ Enemy :: struct {
 	pattern_angle: f32,
 	dash_timer: f32,
 	explode_timer: f32,
+	secondary_timer: f32,
+	mutation: Enemy_Mutation_Kind,
+	encounter_id: i32,
 }
 
 Game :: struct {
@@ -80,6 +111,7 @@ Game :: struct {
 	dash_direction: rl.Vector2,
 	shot_timer: f32,
 	player_size: f32,
+	player_hitbox_size: f32,
 	move_speed: f32,
 	shot_speed: f32,
 	weapon: Weapon_Kind,
@@ -92,6 +124,26 @@ Game :: struct {
 	wave_enemy_target: i32,
 	wave_spawned: i32,
 	boss_spawned: bool,
+	encounter_plan: [MAX_WAVE_ENCOUNTERS]Encounter_Kind,
+	encounter_plan_count: i32,
+	encounter_index: i32,
+	encounter_kind: Encounter_Kind,
+	encounter_state: Encounter_State,
+	encounter_timer: f32,
+	encounter_pause_timer: f32,
+	encounter_spawned: i32,
+	encounter_min_duration: f32,
+	wave_director_done: bool,
+	wave_threat_budget: i32,
+	wave_threat_spent: i32,
+	last_encounter_kind: Encounter_Kind,
+	last_encounter_valid: bool,
+	wave_variation: i32,
+	director_seed: i32,
+	enemy_mutation_level: i32,
+	boss_phase: Boss_Phase_Kind,
+	boss_phase_timer: f32,
+	boss_phase_index: i32,
 	upgrade_options: [2]Upgrade_Kind,
 	powerup_counts: [9]i32,
 	discovered_enemies: [7]bool,
@@ -125,6 +177,7 @@ reset_game :: proc(game: ^Game) {
 	game.damage = 1
 	game.fire_interval = DEFAULT_FIRE_INTERVAL
 	game.player_size = DEFAULT_PLAYER_SIZE
+	game.player_hitbox_size = DEFAULT_PLAYER_HITBOX
 	game.move_speed = DEFAULT_PLAYER_SPEED
 	game.shot_speed = DEFAULT_SHOT_SPEED
 	game.invulnerability_duration = DEFAULT_INVULNERABILITY_DURATION
@@ -148,6 +201,7 @@ start_run :: proc(game: ^Game) {
 	game.best_score = best_score
 	game.discovered_enemies = discovered_enemies
 	game.phase = .Playing
+	game.director_seed = i32(rl.GetRandomValue(0, 1000))
 	select_music(game.audio, game.music_index)
 	game.player_pos = {SCREEN_W / 2, SCREEN_H / 2}
 	game.health = 7
@@ -156,15 +210,14 @@ start_run :: proc(game: ^Game) {
 	game.damage = 1
 	game.fire_interval = DEFAULT_FIRE_INTERVAL
 	game.player_size = DEFAULT_PLAYER_SIZE
+	game.player_hitbox_size = DEFAULT_PLAYER_HITBOX
 	game.move_speed = DEFAULT_PLAYER_SPEED
 	game.shot_speed = DEFAULT_SHOT_SPEED
 	game.invulnerability_duration = DEFAULT_INVULNERABILITY_DURATION
 	game.dash_cooldown = DEFAULT_DASH_COOLDOWN
 	game.phase = .Playing
 	game.wave = 1
-	game.wave_enemy_target = enemies_in_wave(game.wave)
-	game.boss_spawned = true
-	game.spawn_timer = 0.5
+	start_wave(game)
 }
 
 update :: proc(game: ^Game, dt: f32) {
@@ -211,7 +264,7 @@ update :: proc(game: ^Game, dt: f32) {
 	game.parry_cooldown = max(0, game.parry_cooldown - dt)
 	update_parry(game, dt)
 	update_player(game, dt)
-	update_spawning(game, dt)
+	update_encounter_director(game, dt)
 	update_enemies(game, dt)
 	update_bullets(game, dt)
 	handle_collisions(game)
@@ -335,11 +388,11 @@ start_parry_warning :: proc(game: ^Game) {
 		return
 	}
 	game.parry_active = true
-	game.parry_timer = max(PARRY_WINDOW_MIN, PARRY_WINDOW_START - f32(max(0, game.wave - 6)) * PARRY_WINDOW_STEP)
+	game.parry_timer = max(PARRY_WARNING_MIN, PARRY_WARNING_START - f32(max(0, game.wave - 6)) * PARRY_WARNING_STEP)
 	game.parry_skill_position = 0
 	game.parry_skill_speed = 1.0 / game.parry_timer
-	game.parry_skill_zone_start = PARRY_SKILL_ZONE_START
-	game.parry_skill_zone_end = PARRY_SKILL_ZONE_END
+	game.parry_skill_zone_start = PARRY_SUCCESS_ZONE_START
+	game.parry_skill_zone_end = min(0.92, PARRY_SUCCESS_ZONE_START + PARRY_SUCCESS_DURATION / game.parry_timer)
 }
 
 change_music :: proc(game: ^Game, direction: i32) {
@@ -355,25 +408,6 @@ change_music :: proc(game: ^Game, direction: i32) {
 		game.music_index = 0
 	}
 	select_music(game.audio, game.music_index)
-}
-
-update_spawning :: proc(game: ^Game, dt: f32) {
-	if game.wave_spawned >= game.wave_enemy_target && game.boss_spawned {
-		return
-	}
-	game.spawn_timer -= dt
-	if game.spawn_timer > 0 { return }
-
-	if game.wave_spawned < game.wave_enemy_target {
-		if spawn_enemy(game, wave_enemy_kind(game.wave, game.wave_spawned)) {
-			game.wave_spawned += 1
-		}
-	} else if wave_has_boss(game.wave) && !game.boss_spawned {
-		if spawn_enemy(game, .Boss) {
-			game.boss_spawned = true
-		}
-	}
-	game.spawn_timer = max(0.26, 0.90 - f32(game.wave) * 0.018)
 }
 
 damage_player :: proc(game: ^Game) {
@@ -401,7 +435,7 @@ wave_has_boss :: proc(wave: i32) -> bool {
 }
 
 check_wave_complete :: proc(game: ^Game) {
-	if game.wave_spawned < game.wave_enemy_target || !game.boss_spawned { return }
+	if !game.wave_director_done || !game.boss_spawned { return }
 	for enemy in game.enemies {
 		if enemy.active { return }
 	}
@@ -435,11 +469,8 @@ update_upgrade_selection :: proc(game: ^Game) {
 
 	apply_upgrade(game, game.upgrade_options[choice])
 	game.wave += 1
-	game.wave_enemy_target = enemies_in_wave(game.wave)
-	game.wave_spawned = 0
-	game.spawn_timer = 0.8
 	game.endless_mode = game.endless_mode || wave_has_boss(game.wave - 1)
-	game.boss_spawned = !wave_has_boss(game.wave) || game.endless_mode
+	start_wave(game)
 	game.phase = .Playing
 }
 
@@ -451,7 +482,7 @@ apply_upgrade :: proc(game: ^Game, upgrade: Upgrade_Kind) {
 	case .Damage:
 		game.damage += 1
 	case .RapidFire:
-		game.fire_interval = max(0.08, game.fire_interval - 0.06)
+		game.fire_interval = max(MIN_FIRE_INTERVAL, game.fire_interval - RAPID_FIRE_STEP)
 	case .Shotgun:
 		game.weapon = .Shotgun
 	case .Burst:

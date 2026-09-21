@@ -176,7 +176,7 @@ draw_enemies :: proc(game: ^Game) {
 		if enemy.kind == .Boss {
 			rl.DrawRectangleLinesEx(centered_rect(enemy.pos, size), 3, rl.RED)
 			rl.DrawRectangleRec({enemy.pos.x - 35, enemy.pos.y - 46, 70, 5}, rl.DARKGRAY)
-			rl.DrawRectangleRec({enemy.pos.x - 35, enemy.pos.y - 46, 70 * f32(enemy.health) / f32(enemy_health(.Boss, game.wave)), 5}, rl.RED)
+			rl.DrawRectangleRec({enemy.pos.x - 35, enemy.pos.y - 46, 70 * f32(enemy.health) / f32(enemy_health_for_run(.Boss, game.wave, game.damage)), 5}, rl.RED)
 		}
 		rl.DrawRectangleLinesEx(centered_rect(enemy.pos, size), 2, {255, 255, 255, 110})
 	}
@@ -208,6 +208,17 @@ draw_hud :: proc(game: ^Game) {
 	rl.DrawText(rl.TextFormat("SCORE  %04i", game.score), 18, 16, 24, rl.WHITE)
 	rl.DrawText(rl.TextFormat("HP  %i/%i", game.health, game.max_health), 18, 44, 22, rl.DARKGRAY)
 	rl.DrawText(rl.TextFormat("WAVE  %i%s    %s", game.wave, " ENDLESS" if game.endless_mode else "", weapon_name(game.weapon)), 18, 72, 20, rl.DARKGRAY)
+	if game.encounter_state == .Active && !game.wave_director_done {
+		rl.DrawText(rl.TextFormat("ENCOUNTER %i/%i  %s", game.encounter_index + 1, game.encounter_plan_count, encounter_name(game.encounter_kind)), 830, 72, 18, {180, 225, 235, 255})
+	} else if !game.wave_director_done {
+		rl.DrawText("NEXT ENCOUNTER", 930, 72, 18, {160, 190, 205, 255})
+	}
+	if game.enemy_mutation_level > 0 {
+		rl.DrawText(rl.TextFormat("ENEMY MUTATION TIER %i", game.enemy_mutation_level), 18, 128, 16, {205, 170, 115, 255})
+	}
+	if game.wave_director_done && wave_has_boss(game.wave) {
+		rl.DrawText(rl.TextFormat("BOSS PHASE  %s", boss_phase_name(game.boss_phase)), 830, 100, 18, {255, 170, 150, 255})
+	}
 	rl.DrawText("WASD MOVE    MOUSE/IJKL AIM    AUTO FIRE    LEFT CLICK DASH", 18, SCREEN_H - 30, 16, rl.DARKGRAY)
 	if game.dash_unlocked {
 		rl.DrawText(rl.TextFormat("DASH  %s", "READY" if game.dash_cooldown <= 0 else "COOLDOWN"), 18, 100, 18, rl.LIGHTGRAY)

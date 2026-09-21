@@ -1,6 +1,6 @@
 # WHITEOUT
 
-A tiny roguelike bullet-hell game written in Odin. Survive escalating waves, choose a power-up between waves, defeat the wave-five boss, and continue in endless mode.
+A tiny arena roguelite bullet-hell game written in Odin. Survive waves made from authored encounters, choose a power-up between waves, defeat the wave-five boss, and continue in endless mode.
 
 The default presentation is a 1280×720 arena with an optional fullscreen mode and configurable visual overlays.
 
@@ -46,10 +46,16 @@ odin build . -o:speed -out:whiteout
 ## Current scope
 
 - One arena with three weapons: pistol, shotgun, and burst rifle
-- Waves begin with 5 enemies and add 2 enemies each wave
+- Waves are authored sequences of three or more encounters, with short pauses between them and a reward after the full wave
+- The encounter library includes Streaming, Ring Cage, Spiral, Micrododge, Chaser Pressure, and Crossfire
+- Waves 1–4 teach and combine these situations; later waves use a run-seeded, controlled threat-budget director
+- Mid and late encounters add complementary existing roles: shooter pressure, turret zoning, chasers, dashers, and volatile threats
+- Enemy mutation tiers gradually turn turret rings into rotating/alternating/spiral emitters and shooter shots into bursts/fans
+- Player visuals and collision hitbox are conservatively separated for readable micrododging
 - Chaser, single-shot shooter, turret, dasher, bomber, and boss enemy behaviors
 - A boss every fifth wave, followed by an endless mode
 - Endless bombers are static, cannot be shot, and announce an incoming global blast; the configurable parry skill check is their only counter
+- Parry warning time gets shorter carefully, but its effective success window remains approximately 0.30 seconds
 - Volatile enemies chase the player, can be shot, and cause a smaller local explosion when destroyed
 - Two power-up choices after every cleared wave
 - Enemy encyclopedia discovery records and an end-of-run power-up report
@@ -58,13 +64,13 @@ odin build . -o:speed -out:whiteout
 - WAV sound effects loaded from `sound-effects/` for shooting, damage, and defeat
 - Critical content notice: the protagonist's racism is presented as harmful, unreliable thinking; the geometric enemies are fictional entities
 - Damage, healing, max-health, rapid-fire, speed, invulnerability, dash, and weapon unlock upgrades
-- Two-hit enemies with distinct size and color accents
+- Moderate enemy TTL scaling so formations survive multiple authored pattern cycles
 - One-second damage invulnerability with a blinking player indicator
-- Increasing spawn pressure
+- A four-phase central boss: rotating rings, central-lane aimed bursts, spiral, and a final combination
 - Health, score, collisions, game-over, and restart
 - No runtime dependencies beyond Odin's Raylib package; the optional soundtrack files live in `music/`
 
-The implementation deliberately uses fixed-size entity pools. That avoids allocator concerns during play and makes each entity type easy to inspect and extend. Gameplay is separated into small modules: `game.odin` owns run and wave state, `player.odin` owns movement and weapons, `enemies.odin` owns enemy kinds and wave composition, `bullets.odin` owns pools and reusable attack patterns, `collision.odin` owns rules, and `render.odin` owns presentation and the upgrade screen.
+The implementation deliberately uses fixed-size entity pools. That avoids allocator concerns during play and makes each entity type easy to inspect and extend. Gameplay is separated into small modules: `game.odin` owns run state and rewards, `encounters.odin` owns encounter plans, formations, transitions, and the wave director, `player.odin` owns movement and weapons, `enemies.odin` owns enemy behavior and mutations, `bullets.odin` owns pools and reusable attack patterns, `collision.odin` owns rules, and `render.odin` owns presentation and the upgrade screen.
 
 See [NEXT_STEPS.md](NEXT_STEPS.md) for an incremental roadmap.
 

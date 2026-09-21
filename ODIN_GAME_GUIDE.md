@@ -177,44 +177,46 @@ Weapon firing calls helpers from [bullets.odin](bullets.odin), keeping weapon ch
 
 Power-ups are values of `Upgrade_Kind`. `apply_upgrade` changes persistent run state: damage, fire interval, health, maximum health, movement speed, invulnerability duration, or weapon. Player stats such as `move_speed`, `shot_speed`, `player_size`, and `invulnerability_duration` live on `Game`, so upgrades can change them during a run without changing compile-time constants.
 
+`player_size` remains the visible square size. `player_hitbox_size` is a smaller, conservative collision rectangle used by `collision.odin`, which gives the Micrododge encounter readable gaps without making the player visually tiny.
+
 The `Dash` upgrade enables left mouse click. A short `dash_timer` moves the player quickly along the current movement direction (or aim direction when standing still) and temporarily extends invulnerability; `dash_cooldown` prevents continuous use. Collision handling checks this timer before testing enemy bullets, so bullets pass through without being consumed and continue traveling.
 
-## Waves, bosses, and endless mode
+## Waves, encounters, bosses, and endless mode
 
-Wave size is calculated in one place:
+The wave layer is now a small director rather than one growing enemy count:
 
-```odin
-enemies_in_wave :: proc(wave: i32) -> i32 {
-    return 5 + (wave - 1) * 2
-}
+```text
+Run -> Wave -> Encounter -> Formation -> Enemy pattern -> Bullet
 ```
 
-So wave 1 has 5 regular enemies, wave 2 has 7, and wave 3 has 9. `update_spawning` tracks `wave_enemy_target` and `wave_spawned`. A regular enemy is created when the spawn timer expires.
+`encounters.odin` builds a fixed-size `encounter_plan` for each wave. `start_wave` resets the director, `update_encounter_director` starts one authored formation at a time, and `encounter_has_active_enemies` detects when that situation is clear. A short `ENCOUNTER_PAUSE` separates encounters before the next one starts. Once the plan is exhausted, the existing `Upgrade` phase is still used.
 
-Every fifth wave also creates a boss after its regular enemies. `boss_spawned` prevents duplicate boss creation. `check_wave_complete` waits until all required enemies have spawned and no enemy slot is active before switching to `Upgrade`.
+The first waves are deliberately pedagogical: Streaming appears first, Ring Cage follows, then Micrododge, Chaser Pressure, Spiral, and Crossfire are combined. Later waves use a run seed plus `wave_threat_budget` and `encounter_cost` to select from the same library without randomizing individual bullets. The budget grows from the early 3-cost plans to a capped late value of 11, and the existing encounter formations add complementary roles at higher Waves. The director avoids immediate repetition when it has room to choose another block.
 
-After the first boss wave is cleared, `endless_mode` becomes true. Endless mode continues increasing wave sizes but suppresses future bosses, so the run can continue indefinitely.
+Wave five starts a boss after its encounter plan. `Boss_Phase_Kind` is an explicit four-state machine: rotating rings from a central home position, aimed bursts while moving smoothly across the central lane, a central spiral, and a final combination with a small central orbit. The boss enters from above and has a short firing delay so the player can identify its position. Later boss waves tighten cadence modestly and gain health in proportion to player damage. After the boss wave, the existing endless mode continues without another boss and retains the bomber/parry mechanic.
+
+To add an encounter, add an `Encounter_Kind`, then extend `encounter_cost`, `encounter_min_time`, `encounter_name`, the wave plan, and `spawn_encounter_formation` in `encounters.odin`. The formation should name the movement problem it creates. Add a reusable bullet constructor to `bullets.odin` only when an existing constructor is not enough; keep enemy behavior in `enemies.odin`.
 
 ## Enemy behavior
 
 All enemies share the `Enemy` struct but branch on `Enemy_Kind`:
 
 - `Chaser` moves toward the player and fires a fan.
-- `Shooter` is a smaller black chaser that follows the player and fires one direct bullet at a time. It appears alongside chasers starting in wave 1.
-- `Turret` stays in place and fires a ring.
+- `Shooter` is a smaller black chaser that follows the player and fires one direct bullet at a time. It appears in authored Streaming and Crossfire formations; later mutation tiers change it to short bursts or aimed fans.
+- `Turret` stays in place and fires a ring. Its `Enemy_Mutation_Kind` can turn that emitter into a rotating ring, alternating ring, or spiral emitter.
 - `Dasher` advances with sideways oscillation and fires faster fans.
 - `Bomber` is a static, invulnerable parry target. Its fuse triggers a global arena-wide blast, while a successful skill check removes it safely.
 - `Volatile` chases the player and can be destroyed by shooting it; its death (or contact) triggers a smaller local area explosion.
-- `Boss` moves horizontally, has scaling health, and fires large rings.
+- `Boss` uses the central arena as a predictable spatial anchor, has scaling health, and uses the four phases shown above.
 
-To add an enemy, update the enum, initialize its health and position, add movement and firing cases, then add its size and color. This is a data-plus-switch pattern: shared lifecycle, specialized behavior.
+To add an enemy, update the enum, initialize its health and position, add movement and firing cases, then add its size and color. Finally place it deliberately in an encounter formation. This is a data-plus-switch pattern: shared lifecycle, specialized behavior.
 
 ## Bullets and collision rules
 
 `bullets.odin` owns the bullet pool and reusable pattern procedures:
 
 - `fire_fan` rotates a direction by several angles.
-- `fire_ring` distributes bullets evenly around a circle.
+- `fire_ring` distributes bullets evenly around a circle, while `fire_ring_offset` lets the emitter rotate a later ring without adding per-bullet state.
 - `fire_spiral` emits one bullet at a persistent angle.
 
 `collision.odin` is the single place that decides what a hit means:
@@ -228,6 +230,8 @@ To add an enemy, update the enum, initialize its health and position, add moveme
 The boss is the exception to the contact rule: it damages the player but remains active, so the player must keep dodging it until it is defeated.
 
 The player receives one second of invulnerability after damage. The timer is checked by the collision rule and represented visually by blinking in `draw_player`.
+
+The Bomber parry separates total warning time from the effective success window. `PARRY_WARNING_START`, `PARRY_WARNING_STEP`, and `PARRY_WARNING_MIN` control how early the warning becomes; `PARRY_SUCCESS_DURATION` controls the actual timing challenge and is kept at 0.30 seconds by default. The normalized skill bar therefore becomes wider as the warning shortens instead of becoming a sub-frame reflex test.
 
 ## Rendering and Raylib
 
@@ -263,7 +267,7 @@ When adding a visual effect, put the drawing in `render.odin` and store only the
 2. Return its health and size from `enemies.odin`.
 3. Add movement and firing behavior.
 4. Add its render shape and color.
-5. Include it in `wave_enemy_kind`.
+5. Include it in an intentional `spawn_encounter_formation` case (and keep `wave_enemy_kind` only if a legacy fallback needs it).
 
 After each small change, run:
 
@@ -279,7 +283,8 @@ odin build . -out:/tmp/whiteout-check
 | File | Responsibility |
 | --- | --- |
 | `main.odin` | Window setup and main loop |
-| `game.odin` | Shared state, phases, waves, upgrades |
+| `game.odin` | Shared state, phases, rewards, and run-wide settings |
+| `encounters.odin` | Authored encounter library, wave plans, formations, transitions, and threat budget |
 | `player.odin` | Movement and weapon firing |
 | `enemies.odin` | Enemy spawning and AI |
 | `bullets.odin` | Bullet pool and firing patterns |

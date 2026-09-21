@@ -29,10 +29,15 @@ fire_fan :: proc(game: ^Game, origin, direction: rl.Vector2, speed, radius: f32,
 }
 
 fire_ring :: proc(game: ^Game, origin: rl.Vector2, speed, radius: f32, kind: Bullet_Kind, count: int) {
+	fire_ring_offset(game, origin, speed, radius, kind, count, 0)
+}
+
+fire_ring_offset :: proc(game: ^Game, origin: rl.Vector2, speed, radius: f32, kind: Bullet_Kind, count: int, pattern_angle: f32) {
 	if count <= 0 { return }
 	step := 2 * math_pi() / f32(count)
 	for i in 0..<count {
-		direction := rl.Vector2{f32(math.cos(f32(i) * step)), f32(math.sin(f32(i) * step))}
+		angle := f32(i) * step + pattern_angle
+		direction := rl.Vector2{f32(math.cos(angle)), f32(math.sin(angle))}
 		spawn_bullet(game, origin, vec_scale(direction, speed), radius, kind)
 	}
 }
@@ -43,3 +48,11 @@ fire_spiral :: proc(game: ^Game, origin: rl.Vector2, angle: f32, speed, radius: 
 }
 
 math_pi :: proc() -> f32 { return 3.14159265 }
+
+clear_enemy_bullets :: proc(game: ^Game) {
+	for &bullet in game.bullets {
+		if bullet.active && bullet.kind == .Enemy {
+			bullet.active = false
+		}
+	}
+}
