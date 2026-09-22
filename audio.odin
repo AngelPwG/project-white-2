@@ -9,8 +9,36 @@ SHOOT_SAMPLE_COUNT :: 2205
 HIT_SAMPLE_COUNT :: 3307
 DEATH_SAMPLE_COUNT :: 11025
 MUSIC_SAMPLE_COUNT :: 132300
-MUSIC_PATHS :: [2]cstring{"music/bad_apple.mp3", "music/reimus_theme.mp3"}
-MUSIC_NAMES :: [2]cstring{"BAD APPLE", "REIMU'S THEME"}
+MUSIC_PATHS :: [13]cstring{
+    "music/All_Clear_01_loop.ogg",
+    "music/All_Clear_02_loop.ogg",
+    "music/Midboss_01_loop.ogg",
+    "music/Midboss_02_loop.ogg",
+    "music/Shooter_Boss_01_loop.ogg",
+    "music/Shooter_Boss_02_loop.ogg",
+    "music/Shooter_Shop_01_loop.ogg",
+    "music/Shooter_Shop_02_loop.ogg",
+    "music/Spell_Card_01_loop.ogg",
+    "music/Spell_Card_02_loop.ogg",
+    "music/Stage_One_01_loop.ogg",
+    "music/Stage_One_02_loop.ogg",
+    "music/FROL.mp3",
+}
+MUSIC_NAMES := [13]cstring{
+    "All Clear 01",
+    "All Clear 02",
+    "Midboss 01",
+    "Midboss 02",
+    "Shooter Boss 01",
+    "Shooter Boss 02",
+    "Shooter Shop 01",
+    "Shooter Shop 02",
+    "Spell Card 01",
+    "Spell Card 02",
+    "Stage One 01",
+    "Stage One 02",
+    "FROL",
+}
 SHOOT_SOUND_PATH :: "sound-effects/plshoot.wav"
 HIT_SOUND_PATH :: "sound-effects/damage.wav"
 DEATH_SOUND_PATH :: "sound-effects/pldead.wav"
@@ -21,7 +49,7 @@ Audio_State :: struct {
 	hit: rl.Sound,
 	death: rl.Sound,
 	fallback_music: rl.Sound,
-	music_tracks: [2]rl.Music,
+	music_tracks: [13]rl.Music,
 	music_track_count: i32,
 	selected_music: i32,
 	music_playing: bool,
@@ -175,10 +203,7 @@ music_name :: proc(audio: ^Audio_State) -> cstring {
 	if audio == nil || audio.music_track_count == 0 {
 		return "PROCEDURAL FALLBACK"
 	}
-	if audio.selected_music == 0 {
-		return MUSIC_NAMES[0]
-	}
-	return MUSIC_NAMES[1]
+	return MUSIC_NAMES[audio.selected_music]
 }
 
 play_shoot_sound :: proc(audio: ^Audio_State) {

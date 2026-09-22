@@ -169,7 +169,7 @@ reset_game :: proc(game: ^Game) {
 	game.show_fps = true
 	game.keyboard_aim = false
 	game.parry_key_index = 0
-	game.options_cursor = 0
+	game.options_cursor = 2
 	game.player_pos = {SCREEN_W / 2, SCREEN_H / 2}
 	game.health = 7
 	game.max_health = 7
