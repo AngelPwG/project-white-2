@@ -26,7 +26,7 @@ spawn_enemy_at_pattern :: proc(game: ^Game, kind: Enemy_Kind, position: rl.Vecto
 			kind = kind,
 			pos = position,
 			health = enemy_health_for_run(kind, game.wave, game.damage),
-			shot_timer = BOSS_INTRO_DURATION if kind == .Boss else 0.8 + f32(n % 5) * 0.12,
+			shot_timer = BOSS_INTRO_DURATION if kind == .Boss else attack_interval_for_tier(game.composition_tier, 0.8 + f32(n % 5) * 0.12),
 			pattern_angle = pattern_angle,
 			dash_timer = 1.0,
 			explode_timer = 4.0,
@@ -137,51 +137,56 @@ update_enemies :: proc(game: ^Game, dt: f32) {
 		switch enemy.kind {
 		case .Chaser:
 			fire_fan(game, enemy.pos, direction, 185, 5, .Enemy, ENEMY_FAN_ANGLES)
-			enemy.shot_timer = 1.65
+			enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 1.65)
 		case .Shooter:
 			switch enemy.mutation {
 		case .Short_Burst:
 				fire_fan(game, enemy.pos, direction, 210, 4, .Enemy, BURST_ANGLES)
-				enemy.shot_timer = 1.55
+				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 1.55)
 			case .Aimed_Fan:
 				fire_fan(game, enemy.pos, direction, 215, 4, .Enemy, ENEMY_FAN_ANGLES)
-				enemy.shot_timer = 1.50
+				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 1.50)
 			case .None, .Rotating_Ring, .Alternating_Ring, .Spiral_Emitter:
 				spawn_bullet(game, enemy.pos, vec_scale(direction, 210), 4, .Enemy)
-				enemy.shot_timer = 1.35
+				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 1.35)
 			}
 		case .Turret:
 			switch enemy.mutation {
 			case .Rotating_Ring:
 				fire_ring_offset(game, enemy.pos, 145, 5, .Enemy, 8, enemy.pattern_angle)
 				enemy.pattern_angle += 0.30
-				enemy.shot_timer = 0.82
+				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.82)
 			case .Alternating_Ring:
 				offset: f32 = 0.20 if i32(enemy.pattern_angle * 10) % 2 == 0 else -0.20
 				fire_ring_offset(game, enemy.pos, 125, 5, .Enemy, 10, offset)
 				enemy.pattern_angle += 0.41
-				enemy.shot_timer = 0.78
+				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.78)
 			case .Spiral_Emitter:
 				fire_spiral(game, enemy.pos, enemy.pattern_angle, 120, 5, .Enemy)
 				enemy.pattern_angle += 0.34
-				enemy.shot_timer = 0.15
+				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.15)
 			case .None, .Short_Burst, .Aimed_Fan:
 				fire_ring_offset(game, enemy.pos, 145, 5, .Enemy, 8, enemy.pattern_angle)
 				enemy.pattern_angle += 0.18
-				enemy.shot_timer = 0.92
+				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.92)
 			}
 		case .Dasher:
 			fire_fan(game, enemy.pos, direction, 220, 5, .Enemy, ENEMY_FAN_ANGLES)
-			enemy.shot_timer = 1.2
+			enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 1.2)
 		case .Bomber:
 			// Bombers detonate instead of firing projectiles.
 		case .Volatile:
 			// Volatile enemies chase and explode instead of firing projectiles.
 		case .Boss:
 			fire_ring(game, enemy.pos, 125, 6, .Enemy, 12)
-			enemy.shot_timer = 1.0
+			enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 1.0)
 		}
 	}
+}
+
+boss_bullet_speed_for_wave :: proc(wave: i32, base: f32) -> f32 {
+	tier := composition_tier_for_wave(wave)
+	return min(BOSS_MAX_BULLET_SPEED, base * (1.0 + f32(tier) * 0.04))
 }
 
 update_boss :: proc(game: ^Game, enemy: ^Enemy, dt: f32) {
@@ -200,27 +205,27 @@ update_boss :: proc(game: ^Game, enemy: ^Enemy, dt: f32) {
 	switch game.boss_phase {
 	case .Aimed_Bursts:
 		if enemy.shot_timer <= 0 {
-			fire_fan(game, enemy.pos, direction, 195, 5, .Enemy, BURST_ANGLES)
-			enemy.shot_timer = 0.78 - f32(max(0, game.wave - 10)) * 0.01
+			fire_fan(game, enemy.pos, direction, boss_bullet_speed_for_wave(game.wave, 195), 5, .Enemy, BURST_ANGLES)
+			enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.78)
 		}
 	case .Rotating_Rings:
 		if enemy.shot_timer <= 0 {
-			fire_ring_offset(game, enemy.pos, 130 + f32(max(0, game.wave - 10)) * 2, 5, .Enemy, 12, enemy.pattern_angle * 0.55)
-			enemy.shot_timer = 0.95 - f32(max(0, game.wave - 10)) * 0.01
+			fire_ring_offset(game, enemy.pos, boss_bullet_speed_for_wave(game.wave, 130), 5, .Enemy, 12, enemy.pattern_angle * 0.55)
+			enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.95)
 		}
 	case .Spiral:
 		if enemy.shot_timer <= 0 {
-			fire_spiral(game, enemy.pos, enemy.pattern_angle * 1.8, 135, 5, .Enemy)
-			enemy.shot_timer = 0.13 - f32(max(0, game.wave - 10)) * 0.002
+			fire_spiral(game, enemy.pos, enemy.pattern_angle * 1.8, boss_bullet_speed_for_wave(game.wave, 135), 5, .Enemy)
+			enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.13)
 		}
 	case .Finale:
 		if enemy.shot_timer <= 0 {
-			fire_fan(game, enemy.pos, direction, 200, 5, .Enemy, ENEMY_FAN_ANGLES)
-			enemy.shot_timer = 0.90
+			fire_fan(game, enemy.pos, direction, boss_bullet_speed_for_wave(game.wave, 200), 5, .Enemy, ENEMY_FAN_ANGLES)
+			enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.90)
 		}
 		if enemy.secondary_timer <= 0 {
-			fire_ring_offset(game, enemy.pos, 120, 5, .Enemy, 12, enemy.pattern_angle * 0.6)
-			enemy.secondary_timer = 1.35 - f32(max(0, game.wave - 10)) * 0.02
+			fire_ring_offset(game, enemy.pos, boss_bullet_speed_for_wave(game.wave, 120), 5, .Enemy, 12, enemy.pattern_angle * 0.6)
+			enemy.secondary_timer = attack_interval_for_tier(game.composition_tier, 1.35)
 		}
 	}
 }

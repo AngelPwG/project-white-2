@@ -14,6 +14,7 @@ ENEMY_SPEED :: 74.0
 
 DEFAULT_FIRE_INTERVAL :: 0.30
 MIN_FIRE_INTERVAL :: 0.12
+MIN_ENEMY_FIRE_INTERVAL :: 0.10
 RAPID_FIRE_STEP :: 0.045
 DEFAULT_INVULNERABILITY_DURATION :: 1.15
 DEFAULT_DASH_COOLDOWN :: 2.0
@@ -44,6 +45,9 @@ BOSS_INTRO_DURATION :: 1.15
 BOSS_ROTATING_RING_DURATION :: 7.0
 BOSS_AIMED_BURST_DURATION :: 7.5
 BOSS_SPIRAL_DURATION :: 8.0
+BOSS_MIN_PHASE_DURATION :: 5.5
+BOSS_PHASE_TIER_STEP :: 0.35
+BOSS_MAX_BULLET_SPEED :: 240.0
 Parry_Input :: enum { Q, E, R, F, Right_Mouse }
 PARRY_KEYS :: [5]Parry_Input{.Q, .E, .R, .F, .Right_Mouse}
 OPTIONS_COUNT :: 8
@@ -52,7 +56,6 @@ ENEMY_FAN_ANGLES :: [3]f32{-0.18, 0, 0.18}
 SHOTGUN_ANGLES :: [3]f32{-0.14, 0, 0.14}
 BURST_ANGLES :: [3]f32{-0.08, 0, 0.08}
 
-ENCOUNTER_PAUSE :: 0.75
 ENCOUNTER_START_DELAY :: 0.65
 MAX_WAVE_ENCOUNTERS :: 6
 
@@ -131,6 +134,7 @@ Game :: struct {
 	encounter_state: Encounter_State,
 	encounter_timer: f32,
 	encounter_pause_timer: f32,
+	encounter_stage: i32,
 	encounter_spawned: i32,
 	encounter_min_duration: f32,
 	wave_director_done: bool,
@@ -139,6 +143,7 @@ Game :: struct {
 	last_encounter_kind: Encounter_Kind,
 	last_encounter_valid: bool,
 	wave_variation: i32,
+	composition_tier: i32,
 	director_seed: i32,
 	enemy_mutation_level: i32,
 	boss_phase: Boss_Phase_Kind,

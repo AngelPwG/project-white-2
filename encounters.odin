@@ -5,6 +5,42 @@ import rl "vendor:raylib"
 THREAT_BUDGET_BASE :: 3
 THREAT_BUDGET_CAP :: 11
 
+composition_tier_for_wave :: proc(wave: i32) -> i32 {
+	// The threat budget controls how much of the encounter library appears.
+	// Composition tier controls what each selected encounter does internally.
+	return min(4, max(0, (wave - 1) / 5))
+}
+
+enemy_mutation_level_for_wave :: proc(wave: i32) -> i32 {
+	return min(3, max(0, (wave - 1) / 5))
+}
+
+cadence_multiplier_for_tier :: proc(tier: i32) -> f32 {
+	switch min(4, max(0, tier)) {
+	case 0: return 1.00
+	case 1: return 0.96
+	case 2: return 0.92
+	case 3: return 0.88
+	case 4: return 0.84
+	}
+	return 1.00
+}
+
+attack_interval_for_tier :: proc(tier: i32, base: f32) -> f32 {
+	return max(MIN_ENEMY_FIRE_INTERVAL, base * cadence_multiplier_for_tier(tier))
+}
+
+encounter_pause_for_tier :: proc(tier: i32) -> f32 {
+	switch min(4, max(0, tier)) {
+	case 0: return 0.75
+	case 1: return 0.65
+	case 2: return 0.50
+	case 3: return 0.35
+	case 4: return 0.25
+	}
+	return 0.75
+}
+
 // The director chooses authored situations. It never chooses individual bullet
 // angles, counts, or speeds at runtime.
 encounter_cost :: proc(kind: Encounter_Kind) -> i32 {
@@ -141,13 +177,15 @@ start_wave :: proc(game: ^Game) {
 	game.encounter_state = .Between
 	game.encounter_timer = 0
 	game.encounter_pause_timer = ENCOUNTER_START_DELAY
+	game.encounter_stage = 0
 	game.encounter_spawned = 0
 	game.encounter_min_duration = 0
 	game.wave_spawned = 0
 	game.wave_director_done = false
 	game.boss_spawned = !wave_has_boss(game.wave)
 	game.wave_variation = (game.wave + game.director_seed) % 2
-	game.enemy_mutation_level = min(3, max(0, (game.wave - 1) / 2))
+	game.composition_tier = composition_tier_for_wave(game.wave)
+	game.enemy_mutation_level = enemy_mutation_level_for_wave(game.wave)
 }
 
 update_encounter_director :: proc(game: ^Game, dt: f32) {
@@ -162,9 +200,11 @@ update_encounter_director :: proc(game: ^Game, dt: f32) {
 
 	if game.encounter_state == .Active {
 		game.encounter_timer += dt
-		if !encounter_has_active_enemies(game) && game.encounter_timer >= game.encounter_min_duration {
+		update_encounter_reinforcements(game)
+		if !encounter_has_active_enemies(game) && game.encounter_timer >= game.encounter_min_duration &&
+			encounter_reinforcement_delay(game.encounter_kind, game.composition_tier, game.encounter_stage) < 0 {
 			game.encounter_state = .Between
-			game.encounter_pause_timer = ENCOUNTER_PAUSE
+			game.encounter_pause_timer = encounter_pause_for_tier(game.composition_tier)
 		}
 		return
 	}
@@ -194,6 +234,7 @@ begin_encounter :: proc(game: ^Game) {
 	game.encounter_state = .Active
 	game.encounter_timer = 0
 	game.encounter_min_duration = encounter_min_time(game.encounter_kind)
+	game.encounter_stage = 0
 	game.encounter_spawned = 0
 	game.last_encounter_kind = game.encounter_kind
 	game.last_encounter_valid = true
@@ -209,6 +250,19 @@ encounter_has_active_enemies :: proc(game: ^Game) -> bool {
 	return false
 }
 
+turret_mutation_for_slot :: proc(game: ^Game, slot: i32) -> Enemy_Mutation_Kind {
+	switch game.composition_tier {
+	case 0: return .None
+	case 1: return .Rotating_Ring
+	case 2: return .Alternating_Ring
+	case 3:
+		return .Rotating_Ring if slot % 2 == 0 else .Alternating_Ring
+	case 4:
+		return .Spiral_Emitter if slot % 3 == 0 else .Alternating_Ring
+	}
+	return .None
+}
+
 spawn_encounter_formation :: proc(game: ^Game, kind: Encounter_Kind) {
 	switch kind {
 	case .Streaming:
@@ -216,43 +270,19 @@ spawn_encounter_formation :: proc(game: ^Game, kind: Encounter_Kind) {
 		spawn_enemy_at(game, .Shooter, {x, 160}, .None)
 		spawn_enemy_at(game, .Shooter, {x, 360}, .None)
 		spawn_enemy_at(game, .Shooter, {x, 560}, .None)
-		if game.wave >= 6 {
-			spawn_enemy_at(game, .Chaser, {SCREEN_W / 2, SCREEN_H + 20}, .None)
-		}
-		if game.wave >= 11 {
-			spawn_enemy_at_pattern(game, .Turret, {SCREEN_W / 2, 120}, .Rotating_Ring, 0.16)
-		}
 	case .Ring_Cage:
-		spawn_enemy_at_pattern(game, .Turret, {270, 180}, .None, 0.0)
-		spawn_enemy_at_pattern(game, .Turret, {1010, 540}, .None, 0.32)
-		if game.wave >= 6 {
-			spawn_enemy_at(game, .Shooter, {SCREEN_W / 2, 105}, .None)
-		}
-		if game.wave >= 11 {
-			spawn_enemy_at(game, .Chaser, {SCREEN_W / 2, SCREEN_H + 20}, .None)
-		}
+		spawn_enemy_at_pattern(game, .Turret, {270, 180}, turret_mutation_for_slot(game, 0), 0.0)
+		spawn_enemy_at_pattern(game, .Turret, {1010, 540}, turret_mutation_for_slot(game, 1), 0.32)
 	case .Spiral:
 		spawn_enemy_at_pattern(game, .Turret, {SCREEN_W / 2, 150}, .Spiral_Emitter, 0.0)
-		if game.wave >= 6 {
-			spawn_enemy_at(game, .Volatile, {SCREEN_W / 2, SCREEN_H - 110}, .None)
-		}
-		if game.wave >= 11 {
-			spawn_enemy_at(game, .Shooter, {110, 150}, .None)
-		}
 	case .Micrododge:
 		spawn_enemy_at_pattern(game, .Turret, {SCREEN_W / 2, 130}, .Alternating_Ring, 0.18)
-		if game.wave >= 10 {
-			spawn_enemy_at(game, .Shooter, {SCREEN_W - 110, 150}, .None)
-		}
 	case .Chaser_Pressure:
 		spawn_enemy_at_pattern(game, .Turret, {SCREEN_W / 2, 150}, .Rotating_Ring, 0.0)
 		spawn_enemy_at(game, .Chaser, {180, SCREEN_H + 20}, .None)
 		spawn_enemy_at(game, .Chaser, {SCREEN_W - 180, SCREEN_H + 20}, .None)
 		if game.wave >= 4 {
 			spawn_enemy_at(game, .Dasher, {SCREEN_W / 2, -20}, .None)
-		}
-		if game.wave >= 10 {
-			spawn_enemy_at(game, .Shooter, {SCREEN_W / 2, 105}, .None)
 		}
 		if game.endless_mode {
 			// Endless mode keeps the existing bomber/parry mechanic alive inside
@@ -262,14 +292,132 @@ spawn_encounter_formation :: proc(game: ^Game, kind: Encounter_Kind) {
 	case .Crossfire:
 		spawn_enemy_at(game, .Shooter, {110, 155}, .None)
 		spawn_enemy_at(game, .Shooter, {SCREEN_W - 110, SCREEN_H - 155}, .None)
-		if game.wave >= 6 {
+	}
+}
+
+// Reinforcements are authored per encounter. Stage zero is the formation that
+// appears at the start; later stages are deliberately timed interruptions.
+encounter_reinforcement_delay :: proc(kind: Encounter_Kind, tier, stage: i32) -> f32 {
+	switch kind {
+	case .Streaming:
+		if tier == 1 && stage == 0 { return 1.80 }
+		if tier == 2 && stage == 0 { return 2.80 }
+		if tier == 2 && stage == 1 { return 4.80 }
+		if tier == 3 && stage == 0 { return 2.40 }
+		if tier == 3 && stage == 1 { return 4.20 }
+		if tier >= 4 && stage == 0 { return 2.00 }
+		if tier >= 4 && stage == 1 { return 3.70 }
+		if tier >= 4 && stage == 2 { return 5.10 }
+	case .Ring_Cage:
+		if tier == 1 && stage == 0 { return 1.80 }
+		if tier == 2 && stage == 0 { return 3.00 }
+		if tier == 2 && stage == 1 { return 5.00 }
+		if tier == 3 && stage == 0 { return 2.50 }
+		if tier == 3 && stage == 1 { return 4.60 }
+		if tier >= 4 && stage == 0 { return 2.20 }
+		if tier >= 4 && stage == 1 { return 4.00 }
+		if tier >= 4 && stage == 2 { return 5.40 }
+	case .Spiral:
+		if tier == 1 && stage == 0 { return 2.00 }
+		if tier == 2 && stage == 0 { return 2.80 }
+		if tier == 2 && stage == 1 { return 4.70 }
+		if tier == 3 && stage == 0 { return 2.40 }
+		if tier == 3 && stage == 1 { return 4.20 }
+		if tier >= 4 && stage == 0 { return 2.00 }
+		if tier >= 4 && stage == 1 { return 3.80 }
+		if tier >= 4 && stage == 2 { return 5.40 }
+	case .Micrododge:
+		if tier == 1 && stage == 0 { return 1.80 }
+		if tier == 2 && stage == 0 { return 3.00 }
+		if tier == 2 && stage == 1 { return 4.90 }
+		if tier == 3 && stage == 0 { return 2.50 }
+		if tier == 3 && stage == 1 { return 4.50 }
+		if tier >= 4 && stage == 0 { return 2.10 }
+		if tier >= 4 && stage == 1 { return 4.00 }
+		if tier >= 4 && stage == 2 { return 5.30 }
+	case .Chaser_Pressure:
+		if tier == 2 && stage == 0 { return 2.80 }
+		if tier == 3 && stage == 0 { return 2.40 }
+		if tier == 3 && stage == 1 { return 4.80 }
+		if tier >= 4 && stage == 0 { return 2.00 }
+		if tier >= 4 && stage == 1 { return 4.20 }
+	case .Crossfire:
+		if tier == 1 && stage == 0 { return 1.80 }
+		if tier == 2 && stage == 0 { return 2.80 }
+		if tier == 2 && stage == 1 { return 4.60 }
+		if tier == 3 && stage == 0 { return 2.40 }
+		if tier == 3 && stage == 1 { return 4.20 }
+		if tier >= 4 && stage == 0 { return 2.00 }
+		if tier >= 4 && stage == 1 { return 3.80 }
+		if tier >= 4 && stage == 2 { return 5.10 }
+	}
+	return -1.0
+}
+
+spawn_encounter_reinforcement :: proc(game: ^Game, kind: Encounter_Kind, stage: i32) {
+	switch kind {
+	case .Streaming:
+		switch stage {
+		case 0:
 			spawn_enemy_at(game, .Chaser, {SCREEN_W / 2, SCREEN_H + 20}, .None)
+		case 1:
+			spawn_enemy_at_pattern(game, .Turret, {SCREEN_W / 2, 120}, turret_mutation_for_slot(game, 2), 0.16)
+		case 2:
 			spawn_enemy_at(game, .Volatile, {SCREEN_W / 2, SCREEN_H - 110}, .None)
 		}
-		if game.wave >= 11 {
-			spawn_enemy_at_pattern(game, .Turret, {SCREEN_W / 2, 120}, .Rotating_Ring, 0.36)
+	case .Ring_Cage:
+		switch stage {
+		case 0:
+			spawn_enemy_at(game, .Shooter, {SCREEN_W / 2, 105}, .None)
+		case 1:
+			spawn_enemy_at(game, .Chaser, {SCREEN_W / 2, SCREEN_H + 20}, .None)
+		case 2:
+			spawn_enemy_at(game, .Dasher, {SCREEN_W / 2, -20}, .None)
+		}
+	case .Spiral:
+		switch stage {
+		case 0:
+			spawn_enemy_at(game, .Volatile, {SCREEN_W / 2, SCREEN_H - 110}, .None)
+		case 1:
+			spawn_enemy_at(game, .Shooter, {110, 150}, .None)
+		case 2:
+			spawn_enemy_at(game, .Dasher, {SCREEN_W - 110, 150}, .None)
+		}
+	case .Micrododge:
+		switch stage {
+		case 0:
+			spawn_enemy_at(game, .Shooter, {SCREEN_W - 110, 150}, .None)
+		case 1:
+			spawn_enemy_at(game, .Chaser, {SCREEN_W / 2, SCREEN_H + 20}, .None)
+		case 2:
+			spawn_enemy_at(game, .Volatile, {SCREEN_W / 2, SCREEN_H - 110}, .None)
+		}
+	case .Chaser_Pressure:
+		switch stage {
+		case 0:
+			spawn_enemy_at(game, .Shooter, {SCREEN_W / 2, 105}, .None)
+		case 1:
+			spawn_enemy_at(game, .Volatile, {SCREEN_W / 2, SCREEN_H - 110}, .None)
+		}
+	case .Crossfire:
+		switch stage {
+		case 0:
+			spawn_enemy_at(game, .Chaser, {SCREEN_W / 2, SCREEN_H + 20}, .None)
+		case 1:
+			spawn_enemy_at_pattern(game, .Turret, {SCREEN_W / 2, 120}, turret_mutation_for_slot(game, 0), 0.36)
+		case 2:
+			spawn_enemy_at(game, .Volatile, {SCREEN_W / 2, SCREEN_H - 110}, .None)
 		}
 	}
+}
+
+update_encounter_reinforcements :: proc(game: ^Game) {
+	delay := encounter_reinforcement_delay(game.encounter_kind, game.composition_tier, game.encounter_stage)
+	if delay < 0 || game.encounter_timer < delay {
+		return
+	}
+	spawn_encounter_reinforcement(game, game.encounter_kind, game.encounter_stage)
+	game.encounter_stage += 1
 }
 
 boss_phase_duration :: proc(phase: Boss_Phase_Kind, wave: i32) -> f32 {
@@ -280,7 +428,9 @@ boss_phase_duration :: proc(phase: Boss_Phase_Kind, wave: i32) -> f32 {
 	case .Spiral: base = BOSS_SPIRAL_DURATION
 	case .Finale: return 9999.0
 	}
-	return max(5.5, base - f32(max(0, wave - 10)) * 0.05)
+	// Boss phases tighten with the same authored tiers as encounters, but keep
+	// a readable minimum for endless mode.
+	return max(BOSS_MIN_PHASE_DURATION, base - f32(composition_tier_for_wave(wave)) * BOSS_PHASE_TIER_STEP)
 }
 
 advance_boss_phase :: proc(game: ^Game, enemy: ^Enemy) {
@@ -290,7 +440,7 @@ advance_boss_phase :: proc(game: ^Game, enemy: ^Enemy) {
 	game.boss_phase_index += 1
 	game.boss_phase = Boss_Phase_Kind(game.boss_phase_index)
 	game.boss_phase_timer = 0
-	enemy.shot_timer = 0.45
-	enemy.secondary_timer = 0.85
+	enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.45)
+	enemy.secondary_timer = attack_interval_for_tier(game.composition_tier, 0.85)
 	clear_enemy_bullets(game)
 }
