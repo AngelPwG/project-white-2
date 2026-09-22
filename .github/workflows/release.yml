@@ -43,8 +43,7 @@ jobs:
           cp whiteout WHITEOUT-linux-x86_64/
           cp -r sound-effects WHITEOUT-linux-x86_64/
 
-          # Add this only if the music is redistributable:
-          # cp -r music WHITEOUT-linux-x86_64/
+          cp -r music WHITEOUT-linux-x86_64/
 
           tar -czf WHITEOUT-linux-x86_64.tar.gz \
             WHITEOUT-linux-x86_64
