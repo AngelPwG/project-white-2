@@ -192,7 +192,11 @@ boss_bullet_speed_for_wave :: proc(wave: i32, base: f32) -> f32 {
 update_boss :: proc(game: ^Game, enemy: ^Enemy, dt: f32) {
 	enemy.pattern_angle += dt
 	game.boss_phase_timer += dt
-	if game.boss_phase_timer >= boss_phase_duration(game.boss_phase, game.wave) {
+	max_health := enemy_health_for_run(.Boss, game.wave, game.damage)
+	health_progress := 1.0 - f32(max(enemy.health, 0)) / f32(max_health)
+	health_phase_index := min(3, i32(health_progress * 4.0))
+	health_transition_ready := health_phase_index > game.boss_phase_index && game.boss_phase_timer >= BOSS_MIN_PHASE_EXPOSURE
+	if game.boss_phase_timer >= boss_phase_duration(game.boss_phase, game.wave) || health_transition_ready {
 		advance_boss_phase(game, enemy)
 	}
 	target := boss_target_position(game.boss_phase, enemy.pattern_angle)
@@ -208,6 +212,10 @@ update_boss :: proc(game: ^Game, enemy: ^Enemy, dt: f32) {
 			fire_fan(game, enemy.pos, direction, boss_bullet_speed_for_wave(game.wave, 195), 5, .Enemy, BURST_ANGLES)
 			enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.78)
 		}
+		if game.wave >= 10 && enemy.secondary_timer <= 0 {
+			fire_ring_offset(game, enemy.pos, boss_bullet_speed_for_wave(game.wave, 115), 5, .Enemy, 8, enemy.pattern_angle * 0.5)
+			enemy.secondary_timer = attack_interval_for_tier(game.composition_tier, 1.65)
+		}
 	case .Rotating_Rings:
 		if enemy.shot_timer <= 0 {
 			fire_ring_offset(game, enemy.pos, boss_bullet_speed_for_wave(game.wave, 130), 5, .Enemy, 12, enemy.pattern_angle * 0.55)
@@ -217,6 +225,10 @@ update_boss :: proc(game: ^Game, enemy: ^Enemy, dt: f32) {
 		if enemy.shot_timer <= 0 {
 			fire_spiral(game, enemy.pos, enemy.pattern_angle * 1.8, boss_bullet_speed_for_wave(game.wave, 135), 5, .Enemy)
 			enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.13)
+		}
+		if game.wave >= 10 && enemy.secondary_timer <= 0 {
+			fire_fan(game, enemy.pos, direction, boss_bullet_speed_for_wave(game.wave, 205), 5, .Enemy, BURST_ANGLES)
+			enemy.secondary_timer = attack_interval_for_tier(game.composition_tier, 1.35)
 		}
 	case .Finale:
 		if enemy.shot_timer <= 0 {

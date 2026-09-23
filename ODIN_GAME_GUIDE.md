@@ -79,7 +79,7 @@ Enums represent named choices:
 
 ```odin
 Weapon_Kind :: enum { Pistol, Shotgun, Burst }
-Run_Phase :: enum { Title, Options, Playing, Upgrade, GameOver }
+Run_Phase :: enum { Title, Options, Playing, Paused, Upgrade, GameOver }
 ```
 
 When the type is known, an enum value uses a leading dot: `game.weapon = .Pistol`.
@@ -147,10 +147,11 @@ The project keeps `update` and `draw` separate. Update procedures change state; 
 | `Title` | Enter, O, E | Start, open options, or view the encyclopedia |
 | `Options` | F, G, P, K, arrows, B | Change settings or return |
 | `Playing` | Movement, aim, fire | Run the simulation |
+| `Paused` | P, Enter, T, mouse | Freeze combat, resume, or return to title |
 | `Upgrade` | Mouse click | Choose a power-up card |
 | `GameOver` | R, E | Restart or review the run and encyclopedia |
 
-`update` checks the phase before gameplay. Therefore enemies and bullets pause while the upgrade overlay is visible. `render.odin` uses the same phase to choose the title screen, options screen, arena, upgrade overlay, or game-over overlay.
+`update` checks the phase before gameplay. Therefore enemies and bullets pause while the upgrade overlay or pause menu is visible. `render.odin` uses the same phase to choose the title screen, options screen, arena, upgrade overlay, pause menu, or game-over overlay.
 
 The encyclopedia records enemy types when they are spawned. The game-over report preserves the current run's power-up counts, names, and descriptions so the player can see how that build was assembled.
 

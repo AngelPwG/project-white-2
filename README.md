@@ -32,12 +32,14 @@ odin build . -o:speed -out:whiteout
 - Mouse: aim (or enable `K` in Options for `IJKL` keyboard aiming)
 - The gun fires automatically while playing
 - Left mouse click: dash after selecting the dash upgrade (temporary invulnerability; enemy bullets pass through)
+- `P` or the on-screen Pause button: pause combat; `P`/`Enter` resumes and `T` returns to the title
 - Configured parry input: time the selected key or `Right Click` inside the skill-check zone during an endless-mode warning (change it with `Up`/`Down` in Options; default `Q`; 2-second cooldown)
 - `R`: restart after death
 - Click a power-up card to choose it between waves
 - `Enter`: start from the title screen
 - On launch, `Enter` or `Space` advances the character's opening self-dialogue before the title screen
 - `O`: open options; `B`: return to the title screen
+- During combat, `B` no longer leaves the run directly; pause first and choose Return to Title
 - `E`: open the enemy encyclopedia from the title or game-over screen
 - `F`: toggle fullscreen, `G`: toggle the arena grid, `P`: toggle FPS, `K`: toggle keyboard aim
 - Options `Up`/`Down`: select a setting; `Left`/`Right` or `Enter`: change it; this includes background music, music volume, and effects volume

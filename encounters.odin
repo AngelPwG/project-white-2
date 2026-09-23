@@ -6,13 +6,18 @@ THREAT_BUDGET_BASE :: 3
 THREAT_BUDGET_CAP :: 11
 
 composition_tier_for_wave :: proc(wave: i32) -> i32 {
-	// The threat budget controls how much of the encounter library appears.
-	// Composition tier controls what each selected encounter does internally.
-	return min(4, max(0, (wave - 1) / 5))
+	// Bring pattern mutations forward without flattening the late game:
+	// Wave 1 teaches, Waves 2-3 add one layer, Waves 4-5 add a second,
+	// Waves 6-14 build the combined language, and Wave 15+ is fully layered.
+	if wave <= 1 { return 0 }
+	if wave <= 3 { return 1 }
+	if wave <= 5 { return 2 }
+	if wave <= 14 { return 3 }
+	return 4
 }
 
 enemy_mutation_level_for_wave :: proc(wave: i32) -> i32 {
-	return min(3, max(0, (wave - 1) / 5))
+	return min(3, composition_tier_for_wave(wave))
 }
 
 cadence_multiplier_for_tier :: proc(tier: i32) -> f32 {
@@ -32,9 +37,9 @@ attack_interval_for_tier :: proc(tier: i32, base: f32) -> f32 {
 
 encounter_pause_for_tier :: proc(tier: i32) -> f32 {
 	switch min(4, max(0, tier)) {
-	case 0: return 0.75
-	case 1: return 0.65
-	case 2: return 0.50
+	case 0: return 0.55
+	case 1: return 0.50
+	case 2: return 0.42
 	case 3: return 0.35
 	case 4: return 0.25
 	}
@@ -57,12 +62,12 @@ encounter_cost :: proc(kind: Encounter_Kind) -> i32 {
 
 encounter_min_time :: proc(kind: Encounter_Kind) -> f32 {
 	switch kind {
-	case .Streaming: return 4.5
-	case .Ring_Cage: return 5.0
-	case .Spiral: return 5.5
-	case .Micrododge: return 5.0
-	case .Chaser_Pressure: return 6.0
-	case .Crossfire: return 5.0
+	case .Streaming: return 3.2
+	case .Ring_Cage: return 3.6
+	case .Spiral: return 4.0
+	case .Micrododge: return 3.8
+	case .Chaser_Pressure: return 4.6
+	case .Crossfire: return 4.0
 	}
 	return 5.0
 }
@@ -336,7 +341,7 @@ encounter_reinforcement_delay :: proc(kind: Encounter_Kind, tier, stage: i32) ->
 		if tier >= 4 && stage == 1 { return 4.00 }
 		if tier >= 4 && stage == 2 { return 5.30 }
 	case .Chaser_Pressure:
-		if tier == 2 && stage == 0 { return 2.80 }
+		if tier == 2 && stage == 0 { return 2.60 }
 		if tier == 3 && stage == 0 { return 2.40 }
 		if tier == 3 && stage == 1 { return 4.80 }
 		if tier >= 4 && stage == 0 { return 2.00 }
@@ -430,7 +435,8 @@ boss_phase_duration :: proc(phase: Boss_Phase_Kind, wave: i32) -> f32 {
 	}
 	// Boss phases tighten with the same authored tiers as encounters, but keep
 	// a readable minimum for endless mode.
-	return max(BOSS_MIN_PHASE_DURATION, base - f32(composition_tier_for_wave(wave)) * BOSS_PHASE_TIER_STEP)
+	extra_step: f32 = 0.35 if wave >= 10 else 0.0
+	return max(BOSS_MIN_PHASE_DURATION, base - f32(composition_tier_for_wave(wave)) * BOSS_PHASE_TIER_STEP - extra_step)
 }
 
 advance_boss_phase :: proc(game: ^Game, enemy: ^Enemy) {

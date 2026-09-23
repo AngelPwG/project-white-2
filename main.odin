@@ -1,5 +1,6 @@
 package main
 
+import "core:c"
 import rl "vendor:raylib"
 
 audio_global: Audio_State
@@ -9,6 +10,9 @@ main :: proc() {
 	rl.InitWindow(SCREEN_W, SCREEN_H, "Project White- Odin bullet hell MVP")
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(120)
+	// Seed once per process so upgrade cards and authored plan variation do not
+	// repeat the same sequence on every new run.
+	rl.SetRandomSeed(cast(c.uint)(rl.GetTime() * 1000000))
 
 	init_audio(&audio_global)
 	defer shutdown_audio(&audio_global)

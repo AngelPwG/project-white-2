@@ -5,6 +5,31 @@ import "core:math"
 import "core:strings"
 import rl "vendor:raylib"
 
+// Interface palette: muted slate surfaces, warm readable text, and restrained
+// accents keep menus comfortable without competing with gameplay bullets.
+UI_MENU_BACKGROUND :: rl.Color{31, 39, 54, 255}
+UI_WORLD_BACKGROUND :: rl.Color{37, 42, 69, 255}
+UI_WORLD_BORDER :: rl.Color{73, 139, 166, 220}
+UI_TITLE :: rl.Color{238, 242, 235, 255}
+UI_PRIMARY :: rl.Color{224, 231, 232, 255}
+UI_SECONDARY :: rl.Color{177, 193, 198, 255}
+UI_MUTED :: rl.Color{132, 151, 160, 255}
+UI_ACCENT :: rl.Color{116, 194, 190, 255}
+UI_ACCENT_SOFT :: rl.Color{78, 133, 145, 255}
+UI_PANEL :: rl.Color{45, 57, 76, 245}
+UI_PANEL_BORDER :: rl.Color{111, 177, 181, 220}
+UI_CARD :: rl.Color{222, 226, 220, 255}
+UI_CARD_HOVER :: rl.Color{239, 236, 220, 255}
+UI_CARD_TEXT :: rl.Color{38, 48, 58, 255}
+UI_CARD_SECONDARY :: rl.Color{79, 94, 99, 255}
+UI_HP :: rl.Color{242, 133, 117, 255}
+UI_BOSS :: rl.Color{240, 153, 135, 255}
+UI_WARNING :: rl.Color{211, 177, 116, 255}
+UI_DANGER :: rl.Color{126, 52, 62, 245}
+UI_GOOD :: rl.Color{105, 196, 151, 245}
+UI_OVERLAY :: rl.Color{12, 18, 28, 220}
+UI_BAR_BACKGROUND :: rl.Color{72, 82, 94, 255}
+
 draw :: proc(game: ^Game) {
 	rl.BeginDrawing()
 	defer rl.EndDrawing()
@@ -37,16 +62,16 @@ draw :: proc(game: ^Game) {
 }
 
 draw_menu_background :: proc() {
-	rl.ClearBackground({121, 165, 175, 255})
+	rl.ClearBackground(UI_MENU_BACKGROUND)
 }
 
 draw_dialog_scene :: proc(game: ^Game) {
-	rl.DrawRectangle(0, 0, SCREEN_W, SCREEN_H, rl.BLACK)
-	draw_text_wrapped(string(dialog_text(game.dialog_page)), 170, 275, 34, 940, rl.WHITE)
+	rl.DrawRectangle(0, 0, SCREEN_W, SCREEN_H, UI_OVERLAY)
+	draw_text_wrapped(string(dialog_text(game.dialog_page)), 170, 275, 34, 940, UI_PRIMARY)
 	if game.dialog_page < 1 {
-		centered_text("ENTER / SPACE  CONTINUE", 590, 18, {180, 205, 220, 255})
+		centered_text("ENTER / SPACE  CONTINUE", 590, 18, UI_SECONDARY)
 	} else {
-		centered_text("ENTER / SPACE  ENTER THE ARENA", 590, 18, {180, 205, 220, 255})
+		centered_text("ENTER / SPACE  ENTER THE ARENA", 590, 18, UI_SECONDARY)
 	}
 }
 
@@ -61,35 +86,35 @@ dialog_text :: proc(page: i32) -> cstring {
 }
 
 draw_world_background :: proc(game: ^Game) {
-	rl.ClearBackground({37, 42, 69, 255})
+	rl.ClearBackground(UI_WORLD_BACKGROUND)
 	for i in 0..<24 {
 		center := rl.Vector2{f32((i * 113 + 31) % SCREEN_W), f32((i * 71 + 17) % SCREEN_H)}
 		rl.DrawCircleV(center, 1.5, {95, 150, 195, 120})
 	}
-	rl.DrawRectangleLinesEx({3, 3, SCREEN_W - 6, SCREEN_H - 6}, 3, {55, 150, 205, 220})
+	rl.DrawRectangleLinesEx({3, 3, SCREEN_W - 6, SCREEN_H - 6}, 3, UI_WORLD_BORDER)
 }
 
 draw_title_menu :: proc(game: ^Game) {
-	centered_text("PROJECT WHITE", 155, 86, {220, 248, 255, 255})
-	centered_text("A ROGUELIKE BULLET HELL", 250, 22, {67, 92, 106, 255})
-	rl.DrawRectangle(SCREEN_W / 2 - 190, 330, 380, 66, {47, 61, 85, 230})
-	centered_text("PRESS ENTER TO START", 350, 24, rl.WHITE)
-	centered_text(rl.TextFormat("BEST SCORE: %i", game.best_score), 400, 18, {210, 230, 240, 255})
-	centered_text("O  OPTIONS", 435, 20, {180, 205, 220, 255})
-	centered_text("E  ENEMY ENCYCLOPEDIA", 475, 20, {180, 205, 220, 255})
-	centered_text("WASD MOVE     MOUSE/IJKL AIM     AUTO FIRE     LEFT CLICK DASH", 625, 16, {59, 76, 95, 255})
+	centered_text("PROJECT WHITE", 155, 86, UI_TITLE)
+	centered_text("A ROGUELIKE BULLET HELL", 250, 22, UI_SECONDARY)
+	rl.DrawRectangle(SCREEN_W / 2 - 190, 330, 380, 66, UI_PANEL)
+	centered_text("PRESS ENTER TO START", 350, 24, UI_PRIMARY)
+	centered_text(rl.TextFormat("BEST SCORE: %i", game.best_score), 400, 18, UI_SECONDARY)
+	centered_text("O  OPTIONS", 435, 20, UI_SECONDARY)
+	centered_text("E  ENEMY ENCYCLOPEDIA", 475, 20, UI_SECONDARY)
+	centered_text("WASD MOVE     MOUSE/IJKL AIM     AUTO FIRE     LEFT CLICK DASH", 625, 16, UI_MUTED)
 }
 
 draw_options_menu :: proc(game: ^Game) {
-	centered_text("OPTIONS", 120, 56, {220, 248, 255, 255})
+	centered_text("OPTIONS", 120, 56, UI_TITLE)
 	draw_option_line(game, 2, "P   SHOW FPS", "ON" if game.show_fps else "OFF", 270)
 	draw_option_line(game, 3, "K   KEYBOARD AIM (IJKL)", "ON" if game.keyboard_aim else "OFF", 335)
 	draw_option_line(game, 4, "PARRY KEY", parry_key_name(game), 400)
 	draw_option_line(game, 5, "BACKGROUND MUSIC", music_name(game.audio), 465)
 	draw_option_line(game, 6, "MUSIC VOLUME", volume_percent(game.audio.music_volume), 530)
 	draw_option_line(game, 7, "EFFECTS VOLUME", volume_percent(game.audio.effects_volume), 595)
-	centered_text("UP / DOWN SELECT   LEFT / RIGHT CHANGE   ENTER TOGGLE", 670, 14, {180, 205, 220, 255})
-	centered_text("B   BACK TO TITLE     ESC   QUIT", 705, 18, {59, 76, 95, 255})
+	centered_text("UP / DOWN SELECT   LEFT / RIGHT CHANGE   ENTER TOGGLE", 670, 14, UI_SECONDARY)
+	centered_text("B   BACK TO TITLE     ESC   QUIT", 705, 18, UI_MUTED)
 }
 
 volume_percent :: proc(volume: f32) -> cstring {
@@ -98,16 +123,16 @@ volume_percent :: proc(volume: f32) -> cstring {
 
 draw_option_line :: proc(game: ^Game, index: i32, label, value: cstring, y: i32) {
 	if game.options_cursor == index {
-		rl.DrawRectangle(SCREEN_W / 2 - 360, y - 10, 720, 66, {47, 61, 85, 230})
-		rl.DrawRectangleLinesEx({f32(SCREEN_W / 2 - 360), f32(y - 10), 720, 66}, 2, {90, 210, 235, 180})
+		rl.DrawRectangle(SCREEN_W / 2 - 360, y - 10, 720, 66, UI_PANEL)
+		rl.DrawRectangleLinesEx({f32(SCREEN_W / 2 - 360), f32(y - 10), 720, 66}, 2, UI_PANEL_BORDER)
 	}
-	centered_text(label, y, 20, rl.WHITE)
-	centered_text(value, y + 27, 18, {90, 210, 235, 255})
+	centered_text(label, y, 20, UI_PRIMARY)
+	centered_text(value, y + 27, 18, UI_ACCENT)
 }
 
 draw_encyclopedia :: proc(game: ^Game) {
-	centered_text("ENEMY ENCYCLOPEDIA", 70, 44, {220, 248, 255, 255})
-	centered_text("FIELD GUIDE TO ENCOUNTERED ENTITIES", 120, 16, {180, 205, 220, 255})
+	centered_text("ENEMY ENCYCLOPEDIA", 70, 44, UI_TITLE)
+	centered_text("FIELD GUIDE TO ENCOUNTERED ENTITIES", 120, 16, UI_SECONDARY)
 	draw_enemy_entry(game, .Chaser, 150)
 	draw_enemy_entry(game, .Shooter, 230)
 	draw_enemy_entry(game, .Turret, 310)
@@ -115,21 +140,21 @@ draw_encyclopedia :: proc(game: ^Game) {
 	draw_enemy_entry(game, .Bomber, 470)
 	draw_enemy_entry(game, .Volatile, 550)
 	draw_enemy_entry(game, .Boss, 630)
-	centered_text("B  BACK", 680, 18, {165, 190, 205, 255})
+	centered_text("B  BACK", 680, 18, UI_SECONDARY)
 }
 
 draw_enemy_entry :: proc(game: ^Game, kind: Enemy_Kind, y: i32) {
 	if !enemy_discovered(game, kind) {
-		centered_text(rl.TextFormat("???  [DISCOVER THIS ENEMY]"), y, 20, {110, 130, 145, 255})
+		centered_text(rl.TextFormat("???  [DISCOVER THIS ENEMY]"), y, 20, UI_MUTED)
 		return
 	}
-	centered_text(rl.TextFormat("%s  —  %s", enemy_name(kind), enemy_description(kind)), y, 18, rl.WHITE)
+	centered_text(rl.TextFormat("%s  —  %s", enemy_name(kind), enemy_description(kind)), y, 18, UI_PRIMARY)
 }
 
 draw_bullets :: proc(game: ^Game) {
 	for bullet in game.bullets {
 		if !bullet.active { continue }
-		color := rl.WHITE if bullet.kind == .Player else rl.RED
+		color := rl.WHITE if bullet.kind == .Player else rl.Color{241, 108, 103, 255}
 		trail := normalized(bullet.vel)
 		rl.DrawLineEx(vec_sub(bullet.pos, vec_scale(trail, 10)), bullet.pos, bullet.radius * 1.5, {color.r, color.g, color.b, 100})
 		rl.DrawCircleV(bullet.pos, bullet.radius, color)
@@ -142,7 +167,7 @@ draw_explosion :: proc(game: ^Game) {
 	}
 	scale := 1.0 - game.explosion_timer / 0.35
 	if game.explosion_global {
-		rl.DrawRectangle(0, 0, SCREEN_W, SCREEN_H, {245, 45, 25, 80})
+		rl.DrawRectangle(0, 0, SCREEN_W, SCREEN_H, {222, 74, 66, 80})
 	}
 	rl.DrawCircleV(game.explosion_pos, game.explosion_radius * scale, {245, 100, 35, 100})
 	rl.DrawCircleLinesV(game.explosion_pos, game.explosion_radius * scale, {255, 220, 120, 220})
@@ -175,7 +200,7 @@ draw_enemies :: proc(game: ^Game) {
 		}
 		if enemy.kind == .Boss {
 			rl.DrawRectangleLinesEx(centered_rect(enemy.pos, size), 3, rl.RED)
-			rl.DrawRectangleRec({enemy.pos.x - 35, enemy.pos.y - 46, 70, 5}, rl.DARKGRAY)
+			rl.DrawRectangleRec({enemy.pos.x - 35, enemy.pos.y - 46, 70, 5}, UI_BAR_BACKGROUND)
 			rl.DrawRectangleRec({enemy.pos.x - 35, enemy.pos.y - 46, 70 * f32(enemy.health) / f32(enemy_health_for_run(.Boss, game.wave, game.damage)), 5}, rl.RED)
 		}
 		rl.DrawRectangleLinesEx(centered_rect(enemy.pos, size), 2, {255, 255, 255, 110})
@@ -184,15 +209,15 @@ draw_enemies :: proc(game: ^Game) {
 
 enemy_color :: proc(kind: Enemy_Kind) -> rl.Color {
 	switch kind {
-	case .Chaser: return rl.BLACK
-	case .Shooter: return rl.BLACK
-	case .Turret: return rl.DARKGRAY
-	case .Dasher: return rl.ORANGE
-	case .Bomber: return {220, 65, 35, 255}
-	case .Volatile: return {185, 80, 220, 255}
-	case .Boss: return rl.MAROON
+	case .Chaser: return {116, 128, 150, 255}
+	case .Shooter: return {154, 142, 184, 255}
+	case .Turret: return {100, 178, 190, 255}
+	case .Dasher: return {232, 166, 92, 255}
+	case .Bomber: return {220, 91, 83, 255}
+	case .Volatile: return {194, 117, 210, 255}
+	case .Boss: return {218, 105, 120, 255}
 	}
-	return rl.BLACK
+	return UI_MUTED
 }
 
 draw_player :: proc(game: ^Game) {
@@ -205,30 +230,35 @@ draw_player :: proc(game: ^Game) {
 }
 
 draw_hud :: proc(game: ^Game) {
-	rl.DrawText(rl.TextFormat("SCORE  %04i", game.score), 18, 16, 24, rl.WHITE)
-	rl.DrawText(rl.TextFormat("HP  %i/%i", game.health, game.max_health), 18, 44, 22, rl.DARKGRAY)
-	rl.DrawText(rl.TextFormat("WAVE  %i%s    %s", game.wave, " ENDLESS" if game.endless_mode else "", weapon_name(game.weapon)), 18, 72, 20, rl.DARKGRAY)
+	rl.DrawText(rl.TextFormat("SCORE  %04i", game.score), 18, 16, 24, UI_PRIMARY)
+	rl.DrawText(rl.TextFormat("HP  %i/%i", game.health, game.max_health), 18, 44, 22, UI_HP)
+	rl.DrawText(rl.TextFormat("WAVE  %i%s    %s", game.wave, " ENDLESS" if game.endless_mode else "", weapon_name(game.weapon)), 18, 72, 20, UI_ACCENT)
 	if game.encounter_state == .Active && !game.wave_director_done {
-		rl.DrawText(rl.TextFormat("ENCOUNTER %i/%i  %s", game.encounter_index + 1, game.encounter_plan_count, encounter_name(game.encounter_kind)), 830, 72, 18, {180, 225, 235, 255})
+		rl.DrawText(rl.TextFormat("ENCOUNTER %i/%i  %s", game.encounter_index + 1, game.encounter_plan_count, encounter_name(game.encounter_kind)), 830, 72, 18, UI_SECONDARY)
 	} else if !game.wave_director_done {
-		rl.DrawText("NEXT ENCOUNTER", 930, 72, 18, {160, 190, 205, 255})
+		rl.DrawText("NEXT ENCOUNTER", 930, 72, 18, UI_MUTED)
 	}
 	if game.enemy_mutation_level > 0 {
-		rl.DrawText(rl.TextFormat("ENEMY MUTATION TIER %i", game.enemy_mutation_level), 18, 128, 16, {205, 170, 115, 255})
+		rl.DrawText(rl.TextFormat("ENEMY MUTATION TIER %i", game.enemy_mutation_level), 18, 128, 16, UI_WARNING)
 	}
 	if game.wave_director_done && wave_has_boss(game.wave) {
-		rl.DrawText(rl.TextFormat("BOSS PHASE  %s", boss_phase_name(game.boss_phase)), 830, 100, 18, {255, 170, 150, 255})
+		rl.DrawText(rl.TextFormat("BOSS PHASE  %s", boss_phase_name(game.boss_phase)), 830, 100, 18, UI_BOSS)
 	}
-	rl.DrawText("WASD MOVE    MOUSE/IJKL AIM    AUTO FIRE    LEFT CLICK DASH", 18, SCREEN_H - 30, 16, rl.DARKGRAY)
+	rl.DrawText("WASD MOVE    MOUSE/IJKL AIM    AUTO FIRE    P PAUSE", 18, SCREEN_H - 30, 16, UI_SECONDARY)
+	if game.phase == .Playing {
+		rl.DrawRectangleRec(pause_button_rect(), UI_PANEL)
+		rl.DrawRectangleLinesEx(pause_button_rect(), 2, UI_PANEL_BORDER)
+		centered_card_text("PAUSE  [P]", PAUSE_BUTTON_X, PAUSE_BUTTON_Y + 11, PAUSE_BUTTON_WIDTH, 16, UI_PRIMARY)
+	}
 	if game.dash_unlocked {
-		rl.DrawText(rl.TextFormat("DASH  %s", "READY" if game.dash_cooldown <= 0 else "COOLDOWN"), 18, 100, 18, rl.LIGHTGRAY)
+		rl.DrawText(rl.TextFormat("DASH  %s", "READY" if game.dash_cooldown <= 0 else "COOLDOWN"), 18, 100, 18, UI_SECONDARY)
 	}
 	if game.parry_active {
-		rl.DrawRectangle(300, 105, 680, 56, {120, 25, 25, 220})
-		centered_text(rl.TextFormat("BOMB INCOMING — TIME %s IN THE ZONE  %.1fs", parry_key_name(game), game.parry_timer), 122, 20, rl.WHITE)
+		rl.DrawRectangle(300, 105, 680, 56, UI_DANGER)
+		centered_text(rl.TextFormat("BOMB INCOMING — TIME %s IN THE ZONE  %.1fs", parry_key_name(game), game.parry_timer), 122, 20, UI_PRIMARY)
 		draw_parry_skill_check(game)
 	} else if game.endless_mode && game.parry_cooldown > 0 {
-		rl.DrawText(rl.TextFormat("PARRY COOLDOWN  %.1fs", game.parry_cooldown), 18, 124, 16, rl.LIGHTGRAY)
+		rl.DrawText(rl.TextFormat("PARRY COOLDOWN  %.1fs", game.parry_cooldown), 18, 124, 16, UI_SECONDARY)
 	}
 	if game.show_fps { rl.DrawFPS(SCREEN_W - 90, 16) }
 	if game.phase == .Upgrade {
@@ -237,6 +267,30 @@ draw_hud :: proc(game: ^Game) {
 	if game.phase == .GameOver {
 		draw_game_over(game)
 	}
+	if game.phase == .Paused {
+		draw_pause_menu(game)
+	}
+}
+
+draw_pause_menu :: proc(game: ^Game) {
+	x: i32 = SCREEN_W / 2 - PAUSE_MENU_WIDTH / 2
+	y: i32 = 215
+	rl.DrawRectangle(0, 0, SCREEN_W, SCREEN_H, UI_OVERLAY)
+	rl.DrawRectangle(x, y, PAUSE_MENU_WIDTH, PAUSE_MENU_HEIGHT, UI_PANEL)
+	rl.DrawRectangleLinesEx({f32(x), f32(y), f32(PAUSE_MENU_WIDTH), f32(PAUSE_MENU_HEIGHT)}, 2, UI_PANEL_BORDER)
+	centered_text("PAUSED", 245, 34, UI_TITLE)
+	centered_text("SIMULATION FROZEN", 278, 16, UI_SECONDARY)
+	draw_pause_button("RESUME", pause_resume_rect(), rl.CheckCollisionPointRec(rl.GetMousePosition(), pause_resume_rect()))
+	draw_pause_button("RETURN TO TITLE", pause_title_rect(), rl.CheckCollisionPointRec(rl.GetMousePosition(), pause_title_rect()))
+	centered_text("P / ENTER  RESUME     T  TITLE", 430, 15, UI_MUTED)
+}
+
+draw_pause_button :: proc(label: cstring, rect: rl.Rectangle, hovered: bool) {
+	color := UI_CARD_HOVER if hovered else UI_CARD
+	border := UI_ACCENT if hovered else UI_CARD_SECONDARY
+	rl.DrawRectangleRec(rect, color)
+	rl.DrawRectangleLinesEx(rect, 2, border)
+	rl.DrawText(label, i32(rect.x + (rect.width - f32(rl.MeasureText(label, 18))) / 2), i32(rect.y + 14), 18, UI_CARD_TEXT)
 }
 
 draw_parry_skill_check :: proc(game: ^Game) {
@@ -244,21 +298,21 @@ draw_parry_skill_check :: proc(game: ^Game) {
 	y: i32 = 170
 	width: i32 = 560
 	height: i32 = 24
-	rl.DrawRectangle(x, y, width, height, {35, 40, 50, 240})
+	rl.DrawRectangle(x, y, width, height, UI_BAR_BACKGROUND)
 	zone_x := x + i32(game.parry_skill_zone_start * f32(width))
 	zone_width := i32((game.parry_skill_zone_end - game.parry_skill_zone_start) * f32(width))
-	rl.DrawRectangle(zone_x, y, zone_width, height, {70, 200, 115, 240})
+	rl.DrawRectangle(zone_x, y, zone_width, height, UI_GOOD)
 	marker_x := x + i32(clamp(game.parry_skill_position, 0.0, 1.0) * f32(width))
 	rl.DrawRectangle(marker_x - 3, y - 7, 6, height + 14, rl.WHITE)
 	rl.DrawRectangleLines(x, y, width, height, rl.WHITE)
 }
 
 draw_game_over :: proc(game: ^Game) {
-	rl.DrawRectangle(0, 0, SCREEN_W, SCREEN_H, {0, 0, 0, 220})
-	centered_text("THE PURITY COMMITTEE HAS ADJOURNED", 42, 32, rl.WHITE)
-	centered_text(rl.TextFormat("FINAL SCORE: %i    BEST: %i    WAVE: %i", game.score, game.best_score, game.wave), 86, 22, rl.LIGHTGRAY)
-	centered_text(end_run_phrase(game), 124, 18, {160, 205, 220, 255})
-	rl.DrawText("POWERUPS ACQUIRED", 90, 185, 22, rl.WHITE)
+	rl.DrawRectangle(0, 0, SCREEN_W, SCREEN_H, UI_OVERLAY)
+	centered_text("THE PURITY COMMITTEE HAS ADJOURNED", 42, 32, UI_TITLE)
+	centered_text(rl.TextFormat("FINAL SCORE: %i    BEST: %i    WAVE: %i", game.score, game.best_score, game.wave), 86, 22, UI_SECONDARY)
+	centered_text(end_run_phrase(game), 124, 18, UI_SECONDARY)
+	rl.DrawText("POWERUPS ACQUIRED", 90, 185, 22, UI_PRIMARY)
 	draw_powerup_summary(game, .Heal, 90, 225)
 	draw_powerup_summary(game, .Damage, 90, 270)
 	draw_powerup_summary(game, .RapidFire, 90, 315)
@@ -269,13 +323,13 @@ draw_game_over :: proc(game: ^Game) {
 	draw_powerup_summary(game, .Invulnerability, 560, 270)
 	draw_powerup_summary(game, .Dash, 560, 315)
 	if total_powerups(game) == 0 {
-		rl.DrawText("No powerups acquired.", 90, 225, 18, rl.LIGHTGRAY)
+		rl.DrawText("No powerups acquired.", 90, 225, 18, UI_SECONDARY)
 	}
-	rl.DrawText("PLAYER'S ACCOUNT", 90, 525, 18, {220, 235, 240, 255})
-	draw_text_wrapped(string(player_perspective(game)), 90, 552, 15, 1100, {170, 190, 200, 255})
-	rl.DrawText("B  BACK", 720, 685, 18, rl.LIGHTGRAY)
-	rl.DrawText("E  ENCYCLOPEDIA", 900, 685, 18, rl.LIGHTGRAY)
-	rl.DrawText("R  RESTART", 1080, 685, 18, rl.LIGHTGRAY)
+	rl.DrawText("PLAYER'S ACCOUNT", 90, 525, 18, UI_PRIMARY)
+	draw_text_wrapped(string(player_perspective(game)), 90, 552, 15, 1100, UI_SECONDARY)
+	rl.DrawText("B  BACK", 720, 685, 18, UI_SECONDARY)
+	rl.DrawText("E  ENCYCLOPEDIA", 900, 685, 18, UI_SECONDARY)
+	rl.DrawText("R  RESTART", 1080, 685, 18, UI_SECONDARY)
 }
 
 draw_powerup_summary :: proc(game: ^Game, upgrade: Upgrade_Kind, x, y: i32) {
@@ -283,8 +337,8 @@ draw_powerup_summary :: proc(game: ^Game, upgrade: Upgrade_Kind, x, y: i32) {
 	if count == 0 {
 		return
 	}
-	rl.DrawText(rl.TextFormat("%s  x%i", upgrade_name(upgrade), count), x, y, 18, rl.WHITE)
-	draw_text_wrapped(string(upgrade_description(upgrade)), x, y + 22, 14, 310, {170, 190, 200, 255})
+	rl.DrawText(rl.TextFormat("%s  x%i", upgrade_name(upgrade), count), x, y, 18, UI_PRIMARY)
+	draw_text_wrapped(string(upgrade_description(upgrade)), x, y + 22, 14, 310, UI_SECONDARY)
 }
 
 powerup_count :: proc(game: ^Game, upgrade: Upgrade_Kind) -> i32 {
@@ -327,9 +381,9 @@ player_perspective :: proc(game: ^Game) -> cstring {
 }
 
 draw_upgrade_menu :: proc(game: ^Game) {
-	rl.DrawRectangle(0, 0, SCREEN_W, SCREEN_H, {15, 15, 20, 220})
-	centered_text(rl.TextFormat("WAVE %i CLEARED", game.wave), 90, 38, rl.WHITE)
-	centered_text("CHOOSE A POWERUP  (CLICK A CARD)", 140, 22, rl.LIGHTGRAY)
+	rl.DrawRectangle(0, 0, SCREEN_W, SCREEN_H, UI_OVERLAY)
+	centered_text(rl.TextFormat("WAVE %i CLEARED", game.wave), 90, 38, UI_TITLE)
+	centered_text("CHOOSE A POWERUP  (CLICK A CARD)", 140, 22, UI_SECONDARY)
 	draw_upgrade_card(game, (SCREEN_W / 2) - 285, game.upgrade_options[0])
 	draw_upgrade_card(game, (SCREEN_W / 2) + 15, game.upgrade_options[1])
 }
@@ -337,13 +391,13 @@ draw_upgrade_menu :: proc(game: ^Game) {
 draw_upgrade_card :: proc(game: ^Game, x: i32, upgrade: Upgrade_Kind) {
 	rect := rl.Rectangle{f32(x), 205, 270, 220}
 	hovered := rl.CheckCollisionPointRec(rl.GetMousePosition(), rect)
-	card_color := rl.Color{255, 255, 245, 255} if hovered else rl.Color{235, 235, 230, 255}
-	border_color := rl.Color{90, 210, 235, 255} if hovered else rl.Color{40, 45, 55, 255}
+	card_color := UI_CARD_HOVER if hovered else UI_CARD
+	border_color := UI_ACCENT if hovered else UI_CARD_SECONDARY
 	rl.DrawRectangleRec(rect, card_color)
 	rl.DrawRectangleLinesEx(rect, 3 if hovered else 2, border_color)
-	centered_card_text("CLICK", x, 220, 270, 16, rl.BLACK)
-	draw_text_wrapped(string(upgrade_name(upgrade)), x + 18, 270, 20, 234, rl.BLACK)
-	draw_text_wrapped(string(upgrade_description(upgrade)), x + 18, 315, 16, 234, rl.DARKGRAY)
+	centered_card_text("CLICK", x, 220, 270, 16, UI_CARD_TEXT)
+	draw_text_wrapped(string(upgrade_name(upgrade)), x + 18, 270, 20, 234, UI_CARD_TEXT)
+	draw_text_wrapped(string(upgrade_description(upgrade)), x + 18, 315, 16, 234, UI_CARD_SECONDARY)
 }
 
 centered_card_text :: proc(text: cstring, x, y, width, size: i32, color: rl.Color) {

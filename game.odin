@@ -29,6 +29,13 @@ PARRY_SUCCESS_DURATION :: 0.30
 PARRY_SUCCESS_ZONE_START :: 0.50
 PARRY_COOLDOWN :: 2.0
 
+PAUSE_BUTTON_WIDTH :: 172
+PAUSE_BUTTON_HEIGHT :: 40
+PAUSE_BUTTON_X :: SCREEN_W - PAUSE_BUTTON_WIDTH - 18
+PAUSE_BUTTON_Y :: 14
+PAUSE_MENU_WIDTH :: 360
+PAUSE_MENU_HEIGHT :: 245
+
 ENEMY_CHASER_BASE_HP :: 8
 ENEMY_SHOOTER_BASE_HP :: 10
 ENEMY_TURRET_BASE_HP :: 14
@@ -47,6 +54,7 @@ BOSS_AIMED_BURST_DURATION :: 7.5
 BOSS_SPIRAL_DURATION :: 8.0
 BOSS_MIN_PHASE_DURATION :: 5.5
 BOSS_PHASE_TIER_STEP :: 0.35
+BOSS_MIN_PHASE_EXPOSURE :: 2.5
 BOSS_MAX_BULLET_SPEED :: 240.0
 Parry_Input :: enum { Q, E, R, F, Right_Mouse }
 PARRY_KEYS :: [5]Parry_Input{.Q, .E, .R, .F, .Right_Mouse}
@@ -56,18 +64,20 @@ ENEMY_FAN_ANGLES :: [3]f32{-0.18, 0, 0.18}
 SHOTGUN_ANGLES :: [3]f32{-0.14, 0, 0.14}
 BURST_ANGLES :: [3]f32{-0.08, 0, 0.08}
 
-ENCOUNTER_START_DELAY :: 0.65
+ENCOUNTER_START_DELAY :: 0.45
 MAX_WAVE_ENCOUNTERS :: 6
 
 Bullet_Kind :: enum { Player, Enemy }
 Enemy_Kind :: enum { Chaser, Shooter, Turret, Dasher, Bomber, Volatile, Boss }
 Weapon_Kind :: enum { Pistol, Shotgun, Burst }
-Run_Phase :: enum { Dialog, Title, Options, Encyclopedia, Playing, Upgrade, GameOver }
+Run_Phase :: enum { Dialog, Title, Options, Encyclopedia, Playing, Paused, Upgrade, GameOver }
 Upgrade_Kind :: enum { Heal, Damage, RapidFire, Shotgun, Burst, MaxHealth, Speed, Invulnerability, Dash }
 Encounter_Kind :: enum { Streaming, Ring_Cage, Spiral, Micrododge, Chaser_Pressure, Crossfire }
 Encounter_State :: enum { Between, Active, Complete }
 Enemy_Mutation_Kind :: enum { None, Rotating_Ring, Alternating_Ring, Spiral_Emitter, Short_Burst, Aimed_Fan }
 Boss_Phase_Kind :: enum { Rotating_Rings, Aimed_Bursts, Spiral, Finale }
+UPGRADE_KINDS :: [9]Upgrade_Kind{.Heal, .Damage, .RapidFire, .Shotgun, .Burst, .MaxHealth, .Speed, .Invulnerability, .Dash}
+UPGRADE_FALLBACKS :: [2]Upgrade_Kind{.Damage, .MaxHealth}
 
 Bullet :: struct {
 	active: bool,
@@ -263,6 +273,14 @@ update :: proc(game: ^Game, dt: f32) {
 		update_upgrade_selection(game)
 		return
 	}
+	if game.phase == .Paused {
+		update_pause_menu(game)
+		return
+	}
+	if rl.IsKeyPressed(.P) || pause_button_clicked() {
+		game.phase = .Paused
+		return
+	}
 
 	game.invulnerability_timer = max(0, game.invulnerability_timer - dt)
 	game.explosion_timer = max(0, game.explosion_timer - dt)
@@ -274,7 +292,44 @@ update :: proc(game: ^Game, dt: f32) {
 	update_bullets(game, dt)
 	handle_collisions(game)
 	check_wave_complete(game)
-	if rl.IsKeyPressed(.B) { game.phase = .Title }
+}
+
+pause_button_rect :: proc() -> rl.Rectangle {
+	return {f32(PAUSE_BUTTON_X), f32(PAUSE_BUTTON_Y), f32(PAUSE_BUTTON_WIDTH), f32(PAUSE_BUTTON_HEIGHT)}
+}
+
+pause_resume_rect :: proc() -> rl.Rectangle {
+	x := f32(SCREEN_W / 2 - PAUSE_MENU_WIDTH / 2)
+	return {x + 35, 300, f32(PAUSE_MENU_WIDTH - 70), 48}
+}
+
+pause_title_rect :: proc() -> rl.Rectangle {
+	x := f32(SCREEN_W / 2 - PAUSE_MENU_WIDTH / 2)
+	return {x + 35, 365, f32(PAUSE_MENU_WIDTH - 70), 48}
+}
+
+pause_button_clicked :: proc() -> bool {
+	return rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(rl.GetMousePosition(), pause_button_rect())
+}
+
+update_pause_menu :: proc(game: ^Game) {
+	if rl.IsKeyPressed(.P) || rl.IsKeyPressed(.ENTER) {
+		game.phase = .Playing
+		return
+	}
+	if rl.IsKeyPressed(.T) {
+		game.phase = .Title
+		return
+	}
+	if !rl.IsMouseButtonPressed(.LEFT) {
+		return
+	}
+	mouse := rl.GetMousePosition()
+	if rl.CheckCollisionPointRec(mouse, pause_resume_rect()) {
+		game.phase = .Playing
+	} else if rl.CheckCollisionPointRec(mouse, pause_title_rect()) {
+		game.phase = .Title
+	}
 }
 
 update_options :: proc(game: ^Game) {
@@ -449,16 +504,70 @@ check_wave_complete :: proc(game: ^Game) {
 
 prepare_upgrade :: proc(game: ^Game) {
 	game.phase = .Upgrade
-	switch game.wave % 4 {
-	case 0:
-		game.upgrade_options = {Upgrade_Kind(.Damage), .Speed}
-	case 1:
-		game.upgrade_options = {Upgrade_Kind(.Shotgun), .RapidFire}
-	case 2:
-		game.upgrade_options = {Upgrade_Kind(.Heal), .Invulnerability}
-	case 3:
-		game.upgrade_options = {Upgrade_Kind(.Dash), .MaxHealth}
+	eligible: [9]Upgrade_Kind
+	eligible_count: i32
+	for upgrade in UPGRADE_KINDS {
+		if upgrade_is_eligible(game, upgrade) {
+			eligible[eligible_count] = upgrade
+			eligible_count += 1
+		}
 	}
+
+	// Damage and MaxHealth are intentionally uncapped, so this reserve keeps
+	// two useful cards available after every finite upgrade is exhausted.
+	if eligible_count < 2 {
+		for fallback in UPGRADE_FALLBACKS {
+			if !upgrade_list_contains(eligible[:], eligible_count, fallback) {
+				eligible[eligible_count] = fallback
+				eligible_count += 1
+			}
+		}
+	}
+
+	// Remove each chosen card from the pool before choosing the next one.
+	// This makes the pair distinct and samples a fresh pair for every wave.
+	for slot in 0..<2 {
+		pick := i32(rl.GetRandomValue(0, eligible_count - 1))
+		game.upgrade_options[slot] = eligible[pick]
+		eligible[pick] = eligible[eligible_count - 1]
+		eligible_count -= 1
+	}
+	if !upgrade_options_are_valid(game) {
+		game.upgrade_options = UPGRADE_FALLBACKS
+	}
+}
+
+upgrade_is_eligible :: proc(game: ^Game, upgrade: Upgrade_Kind) -> bool {
+	switch upgrade {
+	case .Heal:
+		return game.health < game.max_health
+	case .Damage, .MaxHealth, .Speed, .Invulnerability:
+		return true
+	case .RapidFire:
+		return game.fire_interval > MIN_FIRE_INTERVAL + 0.0001
+	case .Shotgun:
+		return game.weapon != .Shotgun
+	case .Burst:
+		return game.weapon != .Burst
+	case .Dash:
+		return !game.dash_unlocked
+	}
+	return false
+}
+
+upgrade_list_contains :: proc(upgrades: []Upgrade_Kind, count: i32, target: Upgrade_Kind) -> bool {
+	for i in 0..<count {
+		if upgrades[i] == target {
+			return true
+		}
+	}
+	return false
+}
+
+upgrade_options_are_valid :: proc(game: ^Game) -> bool {
+	return game.upgrade_options[0] != game.upgrade_options[1] &&
+		upgrade_is_eligible(game, game.upgrade_options[0]) &&
+		upgrade_is_eligible(game, game.upgrade_options[1])
 }
 
 update_upgrade_selection :: proc(game: ^Game) {
@@ -480,6 +589,9 @@ update_upgrade_selection :: proc(game: ^Game) {
 }
 
 apply_upgrade :: proc(game: ^Game, upgrade: Upgrade_Kind) {
+	if !upgrade_is_eligible(game, upgrade) {
+		return
+	}
 	record_upgrade(game, upgrade)
 	switch upgrade {
 	case .Heal:
@@ -539,8 +651,8 @@ upgrade_description :: proc(upgrade: Upgrade_Kind) -> cstring {
 	case .Heal: return "Restore two health points."
 	case .Damage: return "Deal one extra damage per hit."
 	case .RapidFire: return "Reduce your weapon cooldown."
-	case .Shotgun: return "Equip a three-pellet fan."
-	case .Burst: return "Equip a fast three-pellet fan."
+	case .Shotgun: return "Switch to a slower three-pellet fan."
+	case .Burst: return "Switch to a fast three-pellet fan."
 	case .MaxHealth: return "Increase maximum health and heal one."
 	case .Speed: return "Move 28 pixels per second faster."
 	case .Invulnerability: return "Gain 0.25 seconds of invulnerability."
