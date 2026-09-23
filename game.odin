@@ -29,6 +29,29 @@ PARRY_SUCCESS_DURATION :: 0.30
 PARRY_SUCCESS_ZONE_START :: 0.50
 PARRY_COOLDOWN :: 2.0
 
+// Cross emitters build their arms one four-bullet salvo at a time.  At this
+// speed and interval, adjacent bullets overlap the player's hitbox envelope
+// (190 * .12 = 22.8 <= 2 * (7 + 12)).
+CROSS_EMITTER_WARNING_DURATION :: 1.25
+CROSS_EMITTER_SHOT_INTERVAL :: 0.12
+CROSS_EMITTER_BULLET_SPEED :: 190.0
+CROSS_EMITTER_BULLET_RADIUS :: 7.0
+CROSS_EMITTER_FIRE_DURATION :: 5.20
+CROSS_EMITTER_MAX_DURATION :: 6.45
+CROSS_EMITTER_GAP_EVERY_SALVOS :: 10
+CROSS_EMITTER_GAP_DURATION :: 0.22
+CROSS_EMITTER_SALVO_SIZE :: 4
+CROSS_MAX_BULLETS_PER_EMITTER :: 176
+CAGE_MIN_ACTIVE_DURATION :: 3.40
+CAGE_MAX_DURATION :: 6.00
+MAX_PATTERN_EMITTERS :: 2
+CURVE_BULLET_SPEED :: 185.0
+CURVE_TURN_RATE :: 0.72
+CURVE_BULLET_LIFETIME :: 4.50
+CURVE_STREAM_INTERVAL :: 0.55
+CURVE_STREAM_BULLET_RADIUS :: 4.0
+RAPID_SHOT_INTERVAL :: 0.68
+RAPID_SHOT_WARNING :: 0.16
 PAUSE_BUTTON_WIDTH :: 172
 PAUSE_BUTTON_HEIGHT :: 40
 PAUSE_BUTTON_X :: SCREEN_W - PAUSE_BUTTON_WIDTH - 18
@@ -66,17 +89,21 @@ BURST_ANGLES :: [3]f32{-0.08, 0, 0.08}
 
 ENCOUNTER_START_DELAY :: 0.45
 MAX_WAVE_ENCOUNTERS :: 6
+MAX_BULLETS :: 512
 
 Bullet_Kind :: enum { Player, Enemy }
+Bullet_Trajectory_Kind :: enum { Straight, Curved }
+Bullet_Pattern_Kind :: enum { None, Cross, Curved_Stream }
+Pattern_Emitter_Kind :: enum { Cross }
 Enemy_Kind :: enum { Chaser, Shooter, Turret, Dasher, Bomber, Volatile, Boss }
-Weapon_Kind :: enum { Pistol, Shotgun, Burst }
+Weapon_Kind :: enum { Pistol, Shotgun }
 Run_Phase :: enum { Dialog, Title, Options, Encyclopedia, Playing, Paused, Upgrade, GameOver }
-Upgrade_Kind :: enum { Heal, Damage, RapidFire, Shotgun, Burst, MaxHealth, Speed, Invulnerability, Dash }
-Encounter_Kind :: enum { Streaming, Ring_Cage, Spiral, Micrododge, Chaser_Pressure, Crossfire }
+Upgrade_Kind :: enum { Heal, Damage, RapidFire, Shotgun, MaxHealth, Speed, Invulnerability, Dash }
+Encounter_Kind :: enum { Streaming, Ring_Cage, Spiral, Micrododge, Chaser_Pressure, Crossfire, Bullet_Cage, Bullet_Cross, Curve_Stream, Rapid_Pressure }
 Encounter_State :: enum { Between, Active, Complete }
-Enemy_Mutation_Kind :: enum { None, Rotating_Ring, Alternating_Ring, Spiral_Emitter, Short_Burst, Aimed_Fan }
+Enemy_Mutation_Kind :: enum { None, Rotating_Ring, Alternating_Ring, Spiral_Emitter, Short_Burst, Aimed_Fan, Curved_Stream, Rapid_Shot }
 Boss_Phase_Kind :: enum { Rotating_Rings, Aimed_Bursts, Spiral, Finale }
-UPGRADE_KINDS :: [9]Upgrade_Kind{.Heal, .Damage, .RapidFire, .Shotgun, .Burst, .MaxHealth, .Speed, .Invulnerability, .Dash}
+UPGRADE_KINDS :: [8]Upgrade_Kind{.Heal, .Damage, .RapidFire, .Shotgun, .MaxHealth, .Speed, .Invulnerability, .Dash}
 UPGRADE_FALLBACKS :: [2]Upgrade_Kind{.Damage, .MaxHealth}
 
 Bullet :: struct {
@@ -85,6 +112,11 @@ Bullet :: struct {
 	vel: rl.Vector2,
 	radius: f32,
 	kind: Bullet_Kind,
+	trajectory: Bullet_Trajectory_Kind,
+	curve_rate: f32,
+	lifetime: f32,
+	pattern: Bullet_Pattern_Kind,
+	emitter_id: i32,
 }
 
 Enemy :: struct {
@@ -99,6 +131,20 @@ Enemy :: struct {
 	secondary_timer: f32,
 	mutation: Enemy_Mutation_Kind,
 	encounter_id: i32,
+}
+
+Pattern_Emitter :: struct {
+	active: bool,
+	kind: Pattern_Emitter_Kind,
+	pos: rl.Vector2,
+	encounter_id: i32,
+	warning_timer: f32,
+	fire_timer: f32,
+	lifetime: f32,
+	gap_timer: f32,
+	gap_active: bool,
+	salvos_since_gap: i32,
+	gap_offset: i32,
 }
 
 Game :: struct {
@@ -160,7 +206,7 @@ Game :: struct {
 	boss_phase_timer: f32,
 	boss_phase_index: i32,
 	upgrade_options: [2]Upgrade_Kind,
-	powerup_counts: [9]i32,
+	powerup_counts: [8]i32,
 	discovered_enemies: [7]bool,
 	parry_active: bool,
 	parry_timer: f32,
@@ -173,7 +219,10 @@ Game :: struct {
 	explosion_timer: f32,
 	explosion_radius: f32,
 	explosion_global: bool,
-	bullets: [512]Bullet,
+	pattern_pool_limited: bool,
+	peak_active_bullets: i32,
+	bullets: [MAX_BULLETS]Bullet,
+	pattern_emitters: [MAX_PATTERN_EMITTERS]Pattern_Emitter,
 	enemies: [128]Enemy,
 }
 
@@ -290,6 +339,7 @@ update :: proc(game: ^Game, dt: f32) {
 	update_encounter_director(game, dt)
 	update_enemies(game, dt)
 	update_bullets(game, dt)
+	game.peak_active_bullets = max(game.peak_active_bullets, active_bullet_count(game))
 	handle_collisions(game)
 	check_wave_complete(game)
 }
@@ -481,6 +531,8 @@ damage_player :: proc(game: ^Game) {
 	if game.health <= 0 {
 		game.game_over = true
 		game.phase = .GameOver
+		clear_pattern_emitters(game)
+		clear_temporary_pattern_bullets(game)
 		play_death_sound(game.audio)
 		save_progress(game)
 	}
@@ -495,6 +547,11 @@ wave_has_boss :: proc(wave: i32) -> bool {
 }
 
 check_wave_complete :: proc(game: ^Game) {
+	// A lethal collision can remove the last enemy in the same frame. Game
+	// Over must take priority over the reward screen in that case.
+	if game.game_over || game.phase == .GameOver {
+		return
+	}
 	if !game.wave_director_done || !game.boss_spawned { return }
 	for enemy in game.enemies {
 		if enemy.active { return }
@@ -504,7 +561,7 @@ check_wave_complete :: proc(game: ^Game) {
 
 prepare_upgrade :: proc(game: ^Game) {
 	game.phase = .Upgrade
-	eligible: [9]Upgrade_Kind
+	eligible: [8]Upgrade_Kind
 	eligible_count: i32
 	for upgrade in UPGRADE_KINDS {
 		if upgrade_is_eligible(game, upgrade) {
@@ -547,8 +604,6 @@ upgrade_is_eligible :: proc(game: ^Game, upgrade: Upgrade_Kind) -> bool {
 		return game.fire_interval > MIN_FIRE_INTERVAL + 0.0001
 	case .Shotgun:
 		return game.weapon != .Shotgun
-	case .Burst:
-		return game.weapon != .Burst
 	case .Dash:
 		return !game.dash_unlocked
 	}
@@ -602,8 +657,6 @@ apply_upgrade :: proc(game: ^Game, upgrade: Upgrade_Kind) {
 		game.fire_interval = max(MIN_FIRE_INTERVAL, game.fire_interval - RAPID_FIRE_STEP)
 	case .Shotgun:
 		game.weapon = .Shotgun
-	case .Burst:
-		game.weapon = .Burst
 	case .MaxHealth:
 		game.max_health += 1
 		game.health += 1
@@ -623,11 +676,10 @@ record_upgrade :: proc(game: ^Game, upgrade: Upgrade_Kind) {
 	case .Damage: game.powerup_counts[1] += 1
 	case .RapidFire: game.powerup_counts[2] += 1
 	case .Shotgun: game.powerup_counts[3] += 1
-	case .Burst: game.powerup_counts[4] += 1
-	case .MaxHealth: game.powerup_counts[5] += 1
-	case .Speed: game.powerup_counts[6] += 1
-	case .Invulnerability: game.powerup_counts[7] += 1
-	case .Dash: game.powerup_counts[8] += 1
+	case .MaxHealth: game.powerup_counts[4] += 1
+	case .Speed: game.powerup_counts[5] += 1
+	case .Invulnerability: game.powerup_counts[6] += 1
+	case .Dash: game.powerup_counts[7] += 1
 	}
 }
 
@@ -637,7 +689,6 @@ upgrade_name :: proc(upgrade: Upgrade_Kind) -> cstring {
 	case .Damage: return "HEAVY ROUNDS"
 	case .RapidFire: return "QUICK HANDS"
 	case .Shotgun: return "SHOTGUN"
-	case .Burst: return "BURST RIFLE"
 	case .MaxHealth: return "ARMOR"
 	case .Speed: return "SERVO BOOST"
 	case .Invulnerability: return "PHASE ARMOR"
@@ -652,7 +703,6 @@ upgrade_description :: proc(upgrade: Upgrade_Kind) -> cstring {
 	case .Damage: return "Deal one extra damage per hit."
 	case .RapidFire: return "Reduce your weapon cooldown."
 	case .Shotgun: return "Switch to a slower three-pellet fan."
-	case .Burst: return "Switch to a fast three-pellet fan."
 	case .MaxHealth: return "Increase maximum health and heal one."
 	case .Speed: return "Move 28 pixels per second faster."
 	case .Invulnerability: return "Gain 0.25 seconds of invulnerability."
@@ -665,7 +715,6 @@ weapon_name :: proc(weapon: Weapon_Kind) -> cstring {
 	switch weapon {
 	case .Pistol: return "PISTOL"
 	case .Shotgun: return "SHOTGUN"
-	case .Burst: return "BURST RIFLE"
 	}
 	return "UNKNOWN"
 }

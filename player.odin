@@ -34,11 +34,11 @@ update_player :: proc(game: ^Game, dt: f32) {
 
 	game.shot_timer -= dt
 	if game.shot_timer <= 0 {
-		fire_player_shotgun(game)
+		fire_player_weapon(game)
 	}
 }
 
-fire_player_shotgun :: proc(game: ^Game) {
+fire_player_weapon :: proc(game: ^Game) {
 	direction := player_aim_direction(game)
 
 	origin := vec_add(game.player_pos, vec_scale(direction, 18))
@@ -49,9 +49,6 @@ fire_player_shotgun :: proc(game: ^Game) {
 	case .Shotgun:
 		fire_fan(game, origin, direction, game.shot_speed, 4, .Player, SHOTGUN_ANGLES)
 		game.shot_timer = game.fire_interval * 1.45
-	case .Burst:
-		fire_fan(game, origin, direction, game.shot_speed + 40, 3, .Player, BURST_ANGLES)
-		game.shot_timer = game.fire_interval * 0.75
 	}
 	play_shoot_sound(game.audio)
 }

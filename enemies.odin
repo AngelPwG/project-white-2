@@ -21,12 +21,19 @@ spawn_enemy_at_pattern :: proc(game: ^Game, kind: Enemy_Kind, position: rl.Vecto
 		if selected_mutation == .None {
 			selected_mutation = enemy_mutation_for(kind, game.enemy_mutation_level)
 		}
+		initial_shot_timer := BOSS_INTRO_DURATION if kind == .Boss else attack_interval_for_tier(game.composition_tier, 0.8 + f32(n % 5) * 0.12)
+		if selected_mutation == .Rapid_Shot {
+			initial_shot_timer = RAPID_SHOT_INTERVAL
+		}
+		if selected_mutation == .Curved_Stream {
+			initial_shot_timer = CURVE_STREAM_INTERVAL
+		}
 		enemy = {
 			active = true,
 			kind = kind,
 			pos = position,
 			health = enemy_health_for_run(kind, game.wave, game.damage),
-			shot_timer = BOSS_INTRO_DURATION if kind == .Boss else attack_interval_for_tier(game.composition_tier, 0.8 + f32(n % 5) * 0.12),
+			shot_timer = initial_shot_timer,
 			pattern_angle = pattern_angle,
 			dash_timer = 1.0,
 			explode_timer = 4.0,
@@ -110,7 +117,10 @@ update_enemies :: proc(game: ^Game, dt: f32) {
 			enemy.pattern_angle += dt * 5
 			if enemy.dash_timer <= 0 { enemy.dash_timer = 1.6 }
 		case .Turret:
-			// Turrets hold their position and create area denial.
+			if enemy.mutation == .Curved_Stream {
+				update_curved_emitter(game, &enemy, dt)
+				continue
+			}
 		case .Bomber:
 			enemy.explode_timer -= dt
 			// Bombers are static parry targets. They never chase the player.
@@ -140,13 +150,15 @@ update_enemies :: proc(game: ^Game, dt: f32) {
 			enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 1.65)
 		case .Shooter:
 			switch enemy.mutation {
+			case .Rapid_Shot:
+				fire_rapid_shot(game, &enemy, direction)
 		case .Short_Burst:
 				fire_fan(game, enemy.pos, direction, 210, 4, .Enemy, BURST_ANGLES)
 				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 1.55)
 			case .Aimed_Fan:
 				fire_fan(game, enemy.pos, direction, 215, 4, .Enemy, ENEMY_FAN_ANGLES)
 				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 1.50)
-			case .None, .Rotating_Ring, .Alternating_Ring, .Spiral_Emitter:
+			case .None, .Rotating_Ring, .Alternating_Ring, .Spiral_Emitter, .Curved_Stream:
 				spawn_bullet(game, enemy.pos, vec_scale(direction, 210), 4, .Enemy)
 				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 1.35)
 			}
@@ -165,7 +177,7 @@ update_enemies :: proc(game: ^Game, dt: f32) {
 				fire_spiral(game, enemy.pos, enemy.pattern_angle, 120, 5, .Enemy)
 				enemy.pattern_angle += 0.34
 				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.15)
-			case .None, .Short_Burst, .Aimed_Fan:
+			case .None, .Short_Burst, .Aimed_Fan, .Curved_Stream, .Rapid_Shot:
 				fire_ring_offset(game, enemy.pos, 145, 5, .Enemy, 8, enemy.pattern_angle)
 				enemy.pattern_angle += 0.18
 				enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 0.92)
@@ -182,6 +194,23 @@ update_enemies :: proc(game: ^Game, dt: f32) {
 			enemy.shot_timer = attack_interval_for_tier(game.composition_tier, 1.0)
 		}
 	}
+}
+
+update_curved_emitter :: proc(game: ^Game, enemy: ^Enemy, dt: f32) {
+	enemy.shot_timer -= dt
+	if enemy.shot_timer > 0 {
+		return
+	}
+	direction := normalized(vec_sub(game.player_pos, enemy.pos))
+	curve_rate: f32 = CURVE_TURN_RATE if i32(enemy.pattern_angle) % 2 == 0 else -CURVE_TURN_RATE
+	_ = fire_curved_bullet(game, enemy.pos, direction, CURVE_BULLET_SPEED, CURVE_STREAM_BULLET_RADIUS, .Enemy, curve_rate, CURVE_BULLET_LIFETIME)
+	enemy.pattern_angle += 1
+	enemy.shot_timer = attack_interval_for_tier(game.composition_tier, CURVE_STREAM_INTERVAL)
+}
+
+fire_rapid_shot :: proc(game: ^Game, enemy: ^Enemy, direction: rl.Vector2) {
+	spawn_bullet(game, enemy.pos, vec_scale(direction, 245), 4, .Enemy)
+	enemy.shot_timer = attack_interval_for_tier(game.composition_tier, RAPID_SHOT_INTERVAL)
 }
 
 boss_bullet_speed_for_wave :: proc(wave: i32, base: f32) -> f32 {
@@ -377,6 +406,8 @@ mutation_name :: proc(mutation: Enemy_Mutation_Kind) -> cstring {
 	case .Spiral_Emitter: return "SPIRAL EMITTER"
 	case .Short_Burst: return "SHORT BURST"
 	case .Aimed_Fan: return "AIMED FAN"
+	case .Curved_Stream: return "CURVED STREAM"
+	case .Rapid_Shot: return "QUICKDRAW SHOT"
 	}
 	return "BASE"
 }

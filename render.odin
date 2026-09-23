@@ -55,6 +55,7 @@ draw :: proc(game: ^Game) {
 	}
 	draw_world_background(game)
 	draw_bullets(game)
+	draw_pattern_emitters(game)
 	draw_enemies(game)
 	draw_explosion(game)
 	draw_player(game)
@@ -155,9 +156,31 @@ draw_bullets :: proc(game: ^Game) {
 	for bullet in game.bullets {
 		if !bullet.active { continue }
 		color := rl.WHITE if bullet.kind == .Player else rl.Color{241, 108, 103, 255}
+		switch bullet.pattern {
+		case .None:
+		case .Cross: color = {105, 196, 205, 255}
+		case .Curved_Stream: color = {198, 126, 211, 255}
+		}
 		trail := normalized(bullet.vel)
 		rl.DrawLineEx(vec_sub(bullet.pos, vec_scale(trail, 10)), bullet.pos, bullet.radius * 1.5, {color.r, color.g, color.b, 100})
 		rl.DrawCircleV(bullet.pos, bullet.radius, color)
+	}
+}
+
+draw_pattern_emitters :: proc(game: ^Game) {
+	for emitter in game.pattern_emitters {
+		if !emitter.active { continue }
+		preview_color := rl.Color{105, 196, 205, 145}
+		if emitter.warning_timer > 0 {
+			// The full cross is only a forecast. No bullets exist during this
+			// phase, so the player can choose a sector without taking damage.
+			rl.DrawLineEx({0, emitter.pos.y}, {f32(SCREEN_W), emitter.pos.y}, 2, preview_color)
+			rl.DrawLineEx({emitter.pos.x, 0}, {emitter.pos.x, f32(SCREEN_H)}, 2, preview_color)
+		}
+		rl.DrawCircleV(emitter.pos, 18, {preview_color.r, preview_color.g, preview_color.b, 55})
+		rl.DrawCircleLinesV(emitter.pos, 18, preview_color)
+		rl.DrawLineEx({emitter.pos.x - 11, emitter.pos.y}, {emitter.pos.x + 11, emitter.pos.y}, 4, preview_color)
+		rl.DrawLineEx({emitter.pos.x, emitter.pos.y - 11}, {emitter.pos.x, emitter.pos.y + 11}, 4, preview_color)
 	}
 }
 
@@ -178,6 +201,9 @@ draw_enemies :: proc(game: ^Game) {
 		if !enemy.active { continue }
 		size := enemy_size(enemy.kind)
 		color := enemy_color(enemy.kind)
+		if enemy.mutation == .Rapid_Shot {
+			color = {238, 142, 99, 255}
+		}
 		if enemy.kind == .Dasher {
 			rl.DrawTriangle(
 				{enemy.pos.x, enemy.pos.y - size / 2},
@@ -202,6 +228,10 @@ draw_enemies :: proc(game: ^Game) {
 			rl.DrawRectangleLinesEx(centered_rect(enemy.pos, size), 3, rl.RED)
 			rl.DrawRectangleRec({enemy.pos.x - 35, enemy.pos.y - 46, 70, 5}, UI_BAR_BACKGROUND)
 			rl.DrawRectangleRec({enemy.pos.x - 35, enemy.pos.y - 46, 70 * f32(enemy.health) / f32(enemy_health_for_run(.Boss, game.wave, game.damage)), 5}, rl.RED)
+		}
+		if enemy.mutation == .Rapid_Shot && enemy.shot_timer > 0 && enemy.shot_timer <= RAPID_SHOT_WARNING {
+			direction := normalized(vec_sub(game.player_pos, enemy.pos))
+			rl.DrawLineEx(enemy.pos, vec_add(enemy.pos, vec_scale(direction, 34)), 3, UI_WARNING)
 		}
 		rl.DrawRectangleLinesEx(centered_rect(enemy.pos, size), 2, {255, 255, 255, 110})
 	}
@@ -243,6 +273,9 @@ draw_hud :: proc(game: ^Game) {
 	}
 	if game.wave_director_done && wave_has_boss(game.wave) {
 		rl.DrawText(rl.TextFormat("BOSS PHASE  %s", boss_phase_name(game.boss_phase)), 830, 100, 18, UI_BOSS)
+	}
+	if game.pattern_pool_limited {
+		rl.DrawText("CROSS RETIRED: BULLET POOL FULL", 830, 152, 16, UI_WARNING)
 	}
 	rl.DrawText("WASD MOVE    MOUSE/IJKL AIM    AUTO FIRE    P PAUSE", 18, SCREEN_H - 30, 16, UI_SECONDARY)
 	if game.phase == .Playing {
@@ -317,8 +350,7 @@ draw_game_over :: proc(game: ^Game) {
 	draw_powerup_summary(game, .Damage, 90, 270)
 	draw_powerup_summary(game, .RapidFire, 90, 315)
 	draw_powerup_summary(game, .Shotgun, 90, 360)
-	draw_powerup_summary(game, .Burst, 90, 405)
-	draw_powerup_summary(game, .MaxHealth, 90, 450)
+	draw_powerup_summary(game, .MaxHealth, 90, 405)
 	draw_powerup_summary(game, .Speed, 560, 225)
 	draw_powerup_summary(game, .Invulnerability, 560, 270)
 	draw_powerup_summary(game, .Dash, 560, 315)
@@ -347,11 +379,10 @@ powerup_count :: proc(game: ^Game, upgrade: Upgrade_Kind) -> i32 {
 	case .Damage: return game.powerup_counts[1]
 	case .RapidFire: return game.powerup_counts[2]
 	case .Shotgun: return game.powerup_counts[3]
-	case .Burst: return game.powerup_counts[4]
-	case .MaxHealth: return game.powerup_counts[5]
-	case .Speed: return game.powerup_counts[6]
-	case .Invulnerability: return game.powerup_counts[7]
-	case .Dash: return game.powerup_counts[8]
+	case .MaxHealth: return game.powerup_counts[4]
+	case .Speed: return game.powerup_counts[5]
+	case .Invulnerability: return game.powerup_counts[6]
+	case .Dash: return game.powerup_counts[7]
 	}
 	return 0
 }

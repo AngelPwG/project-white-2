@@ -56,6 +56,10 @@ encounter_cost :: proc(kind: Encounter_Kind) -> i32 {
 	case .Spiral: return 2
 	case .Micrododge: return 2
 	case .Chaser_Pressure: return 3
+	case .Bullet_Cage: return 2
+	case .Bullet_Cross: return 2
+	case .Curve_Stream: return 1
+	case .Rapid_Pressure: return 1
 	}
 	return 1
 }
@@ -68,6 +72,10 @@ encounter_min_time :: proc(kind: Encounter_Kind) -> f32 {
 	case .Micrododge: return 3.8
 	case .Chaser_Pressure: return 4.6
 	case .Crossfire: return 4.0
+	case .Bullet_Cage: return 4.6
+	case .Bullet_Cross: return 4.8
+	case .Curve_Stream: return 4.2
+	case .Rapid_Pressure: return 4.2
 	}
 	return 5.0
 }
@@ -80,6 +88,10 @@ encounter_formation_count :: proc(kind: Encounter_Kind) -> i32 {
 	case .Micrododge: return 1
 	case .Chaser_Pressure: return 3
 	case .Crossfire: return 2
+	case .Bullet_Cage: return 2
+	case .Bullet_Cross: return 1
+	case .Curve_Stream: return 1
+	case .Rapid_Pressure: return 1
 	}
 	return 1
 }
@@ -92,8 +104,31 @@ encounter_name :: proc(kind: Encounter_Kind) -> cstring {
 	case .Micrododge: return "MICRODODGE"
 	case .Chaser_Pressure: return "CHASER PRESSURE"
 	case .Crossfire: return "CROSSFIRE"
+	case .Bullet_Cage: return "BULLET CAGE"
+	case .Bullet_Cross: return "BULLET CROSS"
+	case .Curve_Stream: return "CURVED STREAM"
+	case .Rapid_Pressure: return "QUICKDRAW PRESSURE"
 	}
 	return "UNKNOWN"
+}
+
+encounter_is_temporary_pattern :: proc(kind: Encounter_Kind) -> bool {
+	switch kind {
+	case .Bullet_Cage, .Bullet_Cross, .Curve_Stream, .Rapid_Pressure:
+		return true
+	case .Streaming, .Ring_Cage, .Spiral, .Micrododge, .Chaser_Pressure, .Crossfire:
+		return false
+	}
+	return false
+}
+
+encounter_plan_has_temporary_pattern :: proc(game: ^Game) -> bool {
+	for i in 0..<game.encounter_plan_count {
+		if encounter_is_temporary_pattern(game.encounter_plan[i]) {
+			return true
+		}
+	}
+	return false
 }
 
 boss_phase_name :: proc(phase: Boss_Phase_Kind) -> cstring {
@@ -138,13 +173,41 @@ build_wave_plan :: proc(game: ^Game) {
 		game.encounter_plan[3] = .Micrododge
 		game.encounter_plan_count = 4
 		game.wave_threat_budget = 9
+	} else if game.wave == 6 {
+		// First lesson: the cage is isolated before it can appear beside
+		// another authored hazard.
+		game.encounter_plan[0] = .Bullet_Cage
+		game.encounter_plan[1] = .Streaming
+		game.encounter_plan_count = 2
+		game.wave_threat_budget = 3
+	} else if game.wave == 7 {
+		game.encounter_plan[0] = .Bullet_Cross
+		game.encounter_plan[1] = .Ring_Cage
+		game.encounter_plan_count = 2
+		game.wave_threat_budget = 3
+	} else if game.wave == 8 {
+		game.encounter_plan[0] = .Curve_Stream
+		game.encounter_plan[1] = .Micrododge
+		game.encounter_plan_count = 2
+		game.wave_threat_budget = 3
+	} else if game.wave == 9 {
+		game.encounter_plan[0] = .Rapid_Pressure
+		game.encounter_plan[1] = .Chaser_Pressure
+		game.encounter_plan_count = 2
+		game.wave_threat_budget = 4
 	} else {
-		candidates := [6]Encounter_Kind{.Streaming, .Ring_Cage, .Crossfire, .Spiral, .Micrododge, .Chaser_Pressure}
+		candidates := [10]Encounter_Kind{.Streaming, .Ring_Cage, .Crossfire, .Spiral, .Micrododge, .Chaser_Pressure, .Bullet_Cage, .Bullet_Cross, .Curve_Stream, .Rapid_Pressure}
 		cursor := (game.wave * 3 + game.director_seed) % i32(len(candidates))
 		for i in 0..<MAX_WAVE_ENCOUNTERS {
 			candidate := candidates[(cursor + i32(i)) % i32(len(candidates))]
 			cost := encounter_cost(candidate)
 			if game.last_encounter_valid && candidate == game.last_encounter_kind {
+				continue
+			}
+			// Keep the high-geometry warning patterns separate within a
+			// wave. They can still be reused in later waves with normal
+			// encounters between them.
+			if encounter_is_temporary_pattern(candidate) && encounter_plan_has_temporary_pattern(game) {
 				continue
 			}
 			if game.wave_threat_spent + cost > game.wave_threat_budget && game.encounter_plan_count > 0 {
@@ -176,6 +239,11 @@ build_wave_plan :: proc(game: ^Game) {
 }
 
 start_wave :: proc(game: ^Game) {
+	// No temporary formation survives a wave boundary or the upgrade screen.
+	clear_enemy_bullets(game)
+	clear_pattern_emitters(game)
+	game.pattern_pool_limited = false
+	game.peak_active_bullets = 0
 	build_wave_plan(game)
 	game.encounter_index = -1
 	game.encounter_kind = .Streaming
@@ -206,8 +274,11 @@ update_encounter_director :: proc(game: ^Game, dt: f32) {
 	if game.encounter_state == .Active {
 		game.encounter_timer += dt
 		update_encounter_reinforcements(game)
+		update_pattern_emitters(game, dt)
 		if !encounter_has_active_enemies(game) && game.encounter_timer >= game.encounter_min_duration &&
 			encounter_reinforcement_delay(game.encounter_kind, game.composition_tier, game.encounter_stage) < 0 {
+			release_pattern_emitters(game, game.encounter_index)
+			clear_temporary_pattern_bullets(game)
 			game.encounter_state = .Between
 			game.encounter_pause_timer = encounter_pause_for_tier(game.composition_tier)
 		}
@@ -243,6 +314,14 @@ begin_encounter :: proc(game: ^Game) {
 	game.encounter_spawned = 0
 	game.last_encounter_kind = game.encounter_kind
 	game.last_encounter_valid = true
+	game.pattern_pool_limited = false
+	game.peak_active_bullets = 0
+	if encounter_is_temporary_pattern(game.encounter_kind) {
+		// Release old enemy projectiles before reserving a complete new
+		// formation, so a full pool cannot punch accidental holes in it.
+		clear_enemy_bullets(game)
+	}
+	clear_pattern_emitters(game)
 	spawn_encounter_formation(game, game.encounter_kind)
 }
 
@@ -253,6 +332,108 @@ encounter_has_active_enemies :: proc(game: ^Game) -> bool {
 		}
 	}
 	return false
+}
+
+cage_emitter_position :: proc(index: i32) -> rl.Vector2 {
+	if index == 0 {
+		return {f32(SCREEN_W) * 0.35, f32(SCREEN_H) * 0.35}
+	}
+	return {f32(SCREEN_W) * 0.65, f32(SCREEN_H) * 0.65}
+}
+
+spawn_pattern_emitter :: proc(game: ^Game, position: rl.Vector2, encounter_id, gap_offset: i32) -> bool {
+	for index in 0..<MAX_PATTERN_EMITTERS {
+		emitter := &game.pattern_emitters[index]
+		if emitter.active { continue }
+		max_duration: f32 = CROSS_EMITTER_MAX_DURATION
+		if game.encounter_kind == .Bullet_Cage {
+			max_duration = CAGE_MAX_DURATION
+		}
+		emitter^ = {
+			active = true,
+			kind = .Cross,
+			pos = position,
+			encounter_id = encounter_id,
+			warning_timer = CROSS_EMITTER_WARNING_DURATION,
+			fire_timer = CROSS_EMITTER_SHOT_INTERVAL,
+			lifetime = max_duration,
+			salvos_since_gap = gap_offset,
+			gap_offset = gap_offset,
+		}
+		return true
+	}
+	return false
+}
+
+clear_pattern_emitters :: proc(game: ^Game) {
+	for index in 0..<MAX_PATTERN_EMITTERS {
+		clear_emitter_bullets(game, i32(index))
+		game.pattern_emitters[index] = {}
+	}
+}
+
+release_pattern_emitters :: proc(game: ^Game, encounter_id: i32) {
+	for index in 0..<MAX_PATTERN_EMITTERS {
+		emitter := &game.pattern_emitters[index]
+		if !emitter.active || emitter.encounter_id != encounter_id { continue }
+		clear_emitter_bullets(game, i32(index))
+		emitter.active = false
+	}
+}
+
+update_pattern_emitters :: proc(game: ^Game, dt: f32) {
+	if game.encounter_kind != .Bullet_Cage && game.encounter_kind != .Bullet_Cross {
+		return
+	}
+	can_release := game.encounter_timer >= CAGE_MIN_ACTIVE_DURATION &&
+		!encounter_has_active_enemies(game) &&
+		encounter_reinforcement_delay(game.encounter_kind, game.composition_tier, game.encounter_stage) < 0
+	if can_release {
+		release_pattern_emitters(game, game.encounter_index)
+		return
+	}
+
+	for index in 0..<MAX_PATTERN_EMITTERS {
+		emitter := &game.pattern_emitters[index]
+		if !emitter.active || emitter.encounter_id != game.encounter_index { continue }
+		emitter.lifetime -= dt
+		if emitter.lifetime <= 0 {
+			clear_emitter_bullets(game, i32(index))
+			emitter.active = false
+			continue
+		}
+		if emitter.warning_timer > 0 {
+			emitter.warning_timer -= dt
+			continue
+		}
+		if emitter.gap_active {
+			emitter.gap_timer -= dt
+			if emitter.gap_timer <= 0 {
+				emitter.gap_active = false
+				emitter.salvos_since_gap = emitter.gap_offset
+				emitter.fire_timer = 0
+			}
+			continue
+		}
+		emitter.fire_timer -= dt
+		if emitter.fire_timer > 0 { continue }
+		if emitter.salvos_since_gap >= CROSS_EMITTER_GAP_EVERY_SALVOS {
+			emitter.gap_active = true
+			emitter.gap_timer = CROSS_EMITTER_GAP_DURATION
+			emitter.fire_timer = CROSS_EMITTER_SHOT_INTERVAL
+			continue
+		}
+		if !spawn_cross_salvo(game, emitter.pos, i32(index)) {
+			// Never leave a partially constructed arm: retire this emitter and
+			// remove its bullets if the global pool is unexpectedly full.
+			clear_emitter_bullets(game, i32(index))
+			game.pattern_pool_limited = true
+			emitter.active = false
+			continue
+		}
+		emitter.salvos_since_gap += 1
+		emitter.fire_timer = CROSS_EMITTER_SHOT_INTERVAL
+	}
 }
 
 turret_mutation_for_slot :: proc(game: ^Game, slot: i32) -> Enemy_Mutation_Kind {
@@ -297,6 +478,21 @@ spawn_encounter_formation :: proc(game: ^Game, kind: Encounter_Kind) {
 	case .Crossfire:
 		spawn_enemy_at(game, .Shooter, {110, 155}, .None)
 		spawn_enemy_at(game, .Shooter, {SCREEN_W - 110, SCREEN_H - 155}, .None)
+	case .Bullet_Cage:
+		// These are pattern objects, not enemies: they cannot be shot, do not
+		// touch the player, and never keep the encounter alive by themselves.
+		spawn_pattern_emitter(game, cage_emitter_position(0), game.encounter_index, 0)
+		spawn_pattern_emitter(game, cage_emitter_position(1), game.encounter_index, 5)
+		spawn_enemy_at(game, .Shooter, {130, 140}, .None)
+		spawn_enemy_at(game, .Chaser, {SCREEN_W - 130, SCREEN_H + 20}, .None)
+	case .Bullet_Cross:
+		spawn_pattern_emitter(game, {SCREEN_W / 2, SCREEN_H / 2}, game.encounter_index, 0)
+		spawn_enemy_at(game, .Shooter, {SCREEN_W - 130, 130}, .None)
+	case .Curve_Stream:
+		spawn_enemy_at_pattern(game, .Turret, {SCREEN_W / 2, 125}, .Curved_Stream, 0.0)
+	case .Rapid_Pressure:
+		x := f32(180) if game.wave_variation == 0 else f32(SCREEN_W - 180)
+		spawn_enemy_at_pattern(game, .Shooter, {x, 150}, .Rapid_Shot, 0.0)
 	}
 }
 
@@ -355,6 +551,12 @@ encounter_reinforcement_delay :: proc(kind: Encounter_Kind, tier, stage: i32) ->
 		if tier >= 4 && stage == 0 { return 2.00 }
 		if tier >= 4 && stage == 1 { return 3.80 }
 		if tier >= 4 && stage == 2 { return 5.10 }
+	case .Bullet_Cage:
+		if stage == 0 { return 2.80 }
+	case .Bullet_Cross:
+		if stage == 0 { return 2.60 }
+	case .Curve_Stream, .Rapid_Pressure:
+		return -1.0
 	}
 	return -1.0
 }
@@ -413,6 +615,16 @@ spawn_encounter_reinforcement :: proc(game: ^Game, kind: Encounter_Kind, stage: 
 		case 2:
 			spawn_enemy_at(game, .Volatile, {SCREEN_W / 2, SCREEN_H - 110}, .None)
 		}
+	case .Bullet_Cage:
+		if stage == 0 {
+			spawn_enemy_at(game, .Shooter, {SCREEN_W / 2, 105}, .None)
+		}
+	case .Bullet_Cross:
+		if stage == 0 {
+			spawn_enemy_at(game, .Chaser, {SCREEN_W / 2, SCREEN_H + 20}, .None)
+		}
+	case .Curve_Stream, .Rapid_Pressure:
+		// These formations are authored as complete encounters.
 	}
 }
 
